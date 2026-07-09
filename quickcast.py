@@ -18,7 +18,7 @@ APP_NAME = "QuickCast"
 # Accent color
 ACCENT = "#5B7CFA"
 
-CSS = b"""
+CSS = """
 /* ── Base ───────────────────────────────────────────── */
 window {
     background-color: #f0f0f2;
@@ -84,7 +84,6 @@ scrollbar slider:hover {
     font-size: 15px;
     font-weight: 700;
     padding: 16px 20px 6px 20px;
-    letter-spacing: 0.2px;
 }
 
 /* ── Continue Watching ──────────────────────────────── */
@@ -104,12 +103,10 @@ scrollbar slider:hover {
 .cw-card:hover {
     border-color: #c8c8d0;
     box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-    transform: translateY(-1px);
 }
 .cw-image-wrap {
     background-color: #1a1a1a;
     border-radius: 10px 10px 0 0;
-    overflow: hidden;
 }
 .cw-progress {
     background-color: #5B7CFA;
@@ -134,7 +131,6 @@ scrollbar slider:hover {
 .lib-card:hover {
     border-color: #c8c8d0;
     box-shadow: 0 4px 14px rgba(0,0,0,0.12);
-    transform: translateY(-2px);
 }
 .lib-image-wrap {
     background-color: #2a2a2a;
@@ -190,7 +186,6 @@ scrollbar slider:hover {
 .detail-overview {
     color: #555;
     font-size: 13px;
-    line-height: 1.6;
 }
 .detail-cast-btn {
     background-color: #5B7CFA;
@@ -325,7 +320,6 @@ dialog button.suggested:hover {
     font-size: 36px;
     font-weight: 800;
     color: #5B7CFA;
-    letter-spacing: 10px;
     padding: 8px;
 }
 
@@ -394,7 +388,7 @@ class QuickCast:
         self.window.set_default_size(1100, 750)
 
         css_provider = Gtk.CssProvider()
-        css_provider.load_from_data(CSS)
+        css_provider.load_from_data(CSS.encode("utf-8"))
         screen = Gdk.Screen.get_default()
         style_ctx = Gtk.StyleContext()
         style_ctx.add_provider_for_screen(screen, css_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
