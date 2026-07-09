@@ -14,7 +14,6 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 
-import cairo  # noqa: E402
 import gi  # noqa: E402
 
 gi.require_version("Gtk", "3.0")
@@ -35,22 +34,24 @@ app.window.move(40, 40)
 
 
 def capture(name):
-    """Render the widget tree to a Cairo surface. Independent of the
-    compositor, so it works even when the window is hidden/occluded."""
+    """Grab the window contents. Reliable under Xvfb (recommended) where the
+    virtual framebuffer is always live; also works when the window is visible.
+
+    Run headless & deterministic with:
+      xvfb-run -a --server-args="-screen 0 1220x840x24" \\
+        python3 tools/shots.py build/screenshots
+    """
     path = os.path.join(OUT, name + ".png")
-    widget = app.window.get_child()  # the top-level overlay (client area)
-    w = widget.get_allocated_width()
-    h = widget.get_allocated_height()
-    if w < 2 or h < 2:
-        print(f"[shots] {name}: FAIL not allocated ({w}x{h})", flush=True)
+    app.window.present()
+    while Gtk.events_pending():
+        Gtk.main_iteration_do(False)
+    gw = app.window.get_window()
+    pb = Gdk.pixbuf_get_from_window(gw, 0, 0, gw.get_width(), gw.get_height())
+    if pb is None:
+        print(f"[shots] {name}: FAIL (no pixbuf; run under xvfb-run)", flush=True)
         return
-    surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, w, h)
-    cr = cairo.Context(surface)
-    widget.draw(cr)
-    surface.flush()
-    pb = Gdk.pixbuf_get_from_surface(surface, 0, 0, w, h)
     pb.savev(path, "png", [], [])
-    print(f"[shots] {name}: ok ({w}x{h})", flush=True)
+    print(f"[shots] {name}: ok", flush=True)
 
 
 def _view(name):
