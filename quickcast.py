@@ -59,6 +59,12 @@ CSS = """
 
 /* ── Detail page ────────────────────────────────────── */
 .detail-backdrop { background-color: #000000; }
+.detail-info {
+    background-color: @theme_bg_color;
+    border-radius: 18px 18px 0 0;
+    margin-top: -22px;
+    padding: 22px 28px 26px 28px;
+}
 .detail-title { font-size: 26px; font-weight: 800; }
 .detail-meta { color: @insensitive_fg_color; font-size: 13px; font-weight: 600; }
 .detail-overview { font-size: 14px; }
@@ -168,6 +174,7 @@ class QuickCast:
         self.sort_by = "SortName"
         self.sort_order = "Ascending"
         self._search_timer_id = None
+        self._last_error = None
 
         # Build UI
         self._build_toolbar()
@@ -457,13 +464,18 @@ class QuickCast:
         }
 
     # ── Toast ───────────────────────────────────────────
-    def show_toast(self, message):
+    def show_toast(self, message, error=False):
         log(f"Toast: {message}")
         if self._toast_timer_id is not None:
             GLib.source_remove(self._toast_timer_id)
+        ctx = self.toast_label.get_style_context()
+        if error:
+            ctx.add_class("error")
+        else:
+            ctx.remove_class("error")
         self.toast_label.set_text(message)
         self.toast_label.show()
-        self._toast_timer_id = GLib.timeout_add(2800, self.hide_toast)
+        self._toast_timer_id = GLib.timeout_add(3200 if error else 2800, self.hide_toast)
 
     def hide_toast(self):
         self._toast_timer_id = None
@@ -538,14 +550,20 @@ class QuickCast:
             resp = requests.get(url, headers=headers, params=params, timeout=10)
             log(f"  → {resp.status_code}")
             resp.raise_for_status()
+            self._last_error = None
             return resp.json()
         except requests.exceptions.HTTPError as e:
-            log(f"  → HTTP {e.response.status_code}: {e.response.text[:200]}")
-            GLib.idle_add(self.show_toast, f"API error: {e.response.status_code}")
+            code = e.response.status_code
+            log(f"  → HTTP {code}: {e.response.text[:200]}")
+            self._last_error = ("Not authorized — reconnect in Server"
+                                if code in (401, 403)
+                                else f"Server error {code}")
+            GLib.idle_add(self.show_toast, self._last_error, True)
             return None
         except Exception as e:
             log(f"  → Error: {e}")
-            GLib.idle_add(self.show_toast, f"Network error: {e}")
+            self._last_error = "Can't reach the server"
+            GLib.idle_add(self.show_toast, self._last_error, True)
             return None
 
     def fetch_user_views(self):
@@ -740,6 +758,11 @@ class QuickCast:
         self._clear_grid()
         self.lib_header.set_text("Libraries")
 
+        if not views and self._last_error:
+            self.set_status(self._last_error)
+            self.show_placeholder(f"{self._last_error}.\nCheck the server, then press 🏠 Home to retry.", "⚠️")
+            return
+
         if resume_items:
             self.cw_header.show()
             self.cw_scroll.show()
@@ -779,8 +802,12 @@ class QuickCast:
         self.lib_header.show()
 
         if not items:
-            self.set_status("Empty")
-            self.show_placeholder("Nothing here yet", "📂")
+            if self._last_error:
+                self.set_status(self._last_error)
+                self.show_placeholder(f"{self._last_error}.\nPress ⬅ Back or 🏠 Home to retry.", "⚠️")
+            else:
+                self.set_status("Empty")
+                self.show_placeholder("Nothing here yet", "📂")
             return
 
         for item in items:
