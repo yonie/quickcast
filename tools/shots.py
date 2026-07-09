@@ -81,8 +81,9 @@ STAGES = [
     ("02-library-grid", lambda: enter_library("Movies"), 6000),
     ("03-loading", lambda: app.show_loading_state("Loading…"), 500),
     ("04-sorted-year", lambda: app.sort_combo.set_active(quickcast.QuickCast.SORT_OPTIONS.index("Year")), 5000),
-    ("05-search", lambda: app.search_entry.set_text("live"), 5000),
-    ("06-detail", lambda: open_first("Movie", "Movies"), 6000),
+    ("05-music-grid", lambda: (app.on_home(None), enter_library("Music")), 6000),
+    ("06-search", lambda: app.search_entry.set_text("live"), 5000),
+    ("07-detail", lambda: open_first("Movie", "Movies"), 6000),
 ]
 
 _idx = [0]

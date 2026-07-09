@@ -559,7 +559,8 @@ class QuickCast:
         data = self.jf_request(f"/Users/{self.user_id}/Views")
         return data.get("Items", []) if data else []
 
-    ITEM_FIELDS = "ProductionYear,PremiereDate,CommunityRating,ChildCount,Overview,Genres"
+    ITEM_FIELDS = ("ProductionYear,PremiereDate,CommunityRating,ChildCount,Overview,"
+                   "Genres,AlbumArtist,Artists,IndexNumber,ParentIndexNumber")
 
     def fetch_items(self, parent_id):
         data = self.jf_request(
@@ -873,34 +874,78 @@ class QuickCast:
 
         self.cw_box.pack_start(event_box, False, False, 0)
 
-    # ── Library / folder tile ───────────────────────────
+    # ── Card metadata by item type ──────────────────────
+    @staticmethod
+    def _card_spec(item_type):
+        """Return (width, height, fallback_icon) tuned to the item shape:
+        square for music, landscape for episodes/libraries, portrait else."""
+        if item_type in ("MusicAlbum", "MusicArtist", "Audio", "Playlist"):
+            return 180, 180, "folder-music-symbolic"
+        if item_type in ("Episode",):
+            return 250, 140, "video-display-symbolic"
+        if item_type in ("CollectionFolder", "UserView"):
+            return 250, 140, "folder-symbolic"
+        return 170, 255, "video-display-symbolic"  # Movie/Series/Season/BoxSet/…
+
+    @staticmethod
+    def _card_subtitle(item):
+        t = item.get("Type", "")
+        if t == "Episode":
+            s, e = item.get("ParentIndexNumber"), item.get("IndexNumber")
+            if s is not None and e is not None:
+                return f"S{s} · E{e}"
+        if t in ("MusicAlbum", "MusicArtist", "Audio"):
+            artist = item.get("AlbumArtist") or (item.get("Artists") or [None])[0]
+            year = item.get("ProductionYear")
+            return " · ".join(str(x) for x in (artist, year) if x)
+        if t == "Series":
+            n = item.get("ChildCount")
+            if n:
+                return f"{n} season{'s' if n != 1 else ''}"
+        y = item.get("ProductionYear")
+        return str(y) if y else ""
+
+    # ── Library / content tile ──────────────────────────
     def add_lib_card(self, item):
         item_id = item.get("Id")
         name = item.get("Name", "Unknown")
         item_type = item.get("Type", "")
+        img_w, img_h, icon = self._card_spec(item_type)
+        subtitle = self._card_subtitle(item)
 
         card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         card.get_style_context().add_class("card")
 
-        img_w, img_h = 170, 255
         img_wrap = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         img_wrap.get_style_context().add_class("poster")
         img_wrap.set_size_request(img_w, img_h)
 
         image = Gtk.Image()
-        icon = "folder-music-symbolic" if "Music" in item_type else "folder-symbolic"
         self._set_image_async(image, item_id, img_w, img_h, icon)
-
         img_wrap.pack_start(image, True, True, 0)
 
         title_label = Gtk.Label(label=name)
         title_label.get_style_context().add_class("card-title")
-        title_label.set_max_width_chars(24)
+        title_label.set_max_width_chars(max(14, img_w // 8))
         title_label.set_ellipsize(Pango.EllipsizeMode.END)
         title_label.set_halign(Gtk.Align.START)
+        title_label.set_xalign(0)
 
         card.pack_start(img_wrap, False, False, 0)
         card.pack_start(title_label, False, False, 0)
+
+        if subtitle:
+            sub_label = Gtk.Label(label=subtitle)
+            sub_label.get_style_context().add_class("card-sub")
+            sub_label.set_ellipsize(Pango.EllipsizeMode.END)
+            sub_label.set_halign(Gtk.Align.START)
+            sub_label.set_xalign(0)
+            card.pack_start(sub_label, False, False, 0)
+        else:
+            # keep card heights aligned when some tiles lack a subtitle
+            spacer = Gtk.Label(label="")
+            spacer.get_style_context().add_class("card-sub")
+            card.pack_start(spacer, False, False, 0)
 
         event_box = Gtk.EventBox()
         event_box.add(card)
