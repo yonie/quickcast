@@ -13,7 +13,7 @@ gi.require_version("Gtk", "3.0")
 gi.require_version("Gdk", "3.0")
 from gi.repository import Gdk, GdkPixbuf, GLib, Gtk, Pango  # noqa: E402
 
-VERSION = "0.3.0"
+VERSION = "0.4.0"
 APP_NAME = "QuickCast"
 
 # Accent color
@@ -1695,8 +1695,10 @@ A minimal Jellyfin remote with Chromecast support.
 5. Bottom bar controls playback
 
 <b>Shortcuts:</b>
-• F5 — Refresh
-• ESC — Go back"""
+• Ctrl+F or / — Search
+• F5 or Ctrl+R — Home / refresh
+• Esc — Back (or clear search)
+• Space — Play / pause (while casting)"""
         )
         text.set_use_markup(True)
         text.set_margin_start(24)
@@ -1712,11 +1714,25 @@ A minimal Jellyfin remote with Chromecast support.
 
     # ── Keyboard ────────────────────────────────────────
     def on_key_press(self, widget, event):
-        if event.keyval == Gdk.KEY_F5:
-            self.on_refresh(None)
+        ctrl = event.state & Gdk.ModifierType.CONTROL_MASK
+        search_focused = self.search_entry.has_focus()
+
+        # Ctrl+F or "/" focuses search (unless already typing in it)
+        if (ctrl and event.keyval == Gdk.KEY_f) or (event.keyval == Gdk.KEY_slash and not search_focused):
+            self.search_entry.grab_focus()
             return True
-        elif event.keyval == Gdk.KEY_Escape:
-            self.on_back(None)
+        if event.keyval == Gdk.KEY_F5 or (ctrl and event.keyval == Gdk.KEY_r):
+            self.on_home(None)
+            return True
+        if event.keyval == Gdk.KEY_Escape:
+            if search_focused and self.search_entry.get_text():
+                self.search_entry.set_text("")  # clear → back home via search-changed
+            else:
+                self.on_back(None)
+            return True
+        # Space toggles play/pause when casting and not typing
+        if event.keyval == Gdk.KEY_space and not search_focused and self.chromecast:
+            self.on_play_pause(None)
             return True
         return False
 
