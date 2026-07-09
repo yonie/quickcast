@@ -10,11 +10,11 @@ Captures via ImageMagick `import -window <xid>` on X11, falling back to
 Gdk.pixbuf_get_from_window (works under Wayland).
 """
 import os
-import subprocess
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 
+import cairo  # noqa: E402
 import gi  # noqa: E402
 
 gi.require_version("Gtk", "3.0")
@@ -35,23 +35,22 @@ app.window.move(40, 40)
 
 
 def capture(name):
+    """Render the widget tree to a Cairo surface. Independent of the
+    compositor, so it works even when the window is hidden/occluded."""
     path = os.path.join(OUT, name + ".png")
-    gwin = app.window.get_window()
-    try:
-        xid = gwin.get_xid()
-        r = subprocess.run(["import", "-window", str(xid), path], capture_output=True, text=True)
-        if r.returncode == 0:
-            print(f"[shots] {name}: ok (x11)", flush=True)
-            return
-    except Exception:
-        pass
-    try:
-        w, h = gwin.get_width(), gwin.get_height()
-        pb = Gdk.pixbuf_get_from_window(gwin, 0, 0, w, h)
-        pb.savev(path, "png", [], [])
-        print(f"[shots] {name}: ok (gdk)", flush=True)
-    except Exception as e:
-        print(f"[shots] {name}: FAIL {e}", flush=True)
+    widget = app.window.get_child()  # the top-level overlay (client area)
+    w = widget.get_allocated_width()
+    h = widget.get_allocated_height()
+    if w < 2 or h < 2:
+        print(f"[shots] {name}: FAIL not allocated ({w}x{h})", flush=True)
+        return
+    surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, w, h)
+    cr = cairo.Context(surface)
+    widget.draw(cr)
+    surface.flush()
+    pb = Gdk.pixbuf_get_from_surface(surface, 0, 0, w, h)
+    pb.savev(path, "png", [], [])
+    print(f"[shots] {name}: ok ({w}x{h})", flush=True)
 
 
 def _view(name):
@@ -82,8 +81,10 @@ STAGES = [
     ("03-loading", lambda: app.show_loading_state("Loading…"), 500),
     ("04-sorted-year", lambda: app.sort_combo.set_active(quickcast.QuickCast.SORT_OPTIONS.index("Year")), 5000),
     ("05-music-grid", lambda: (app.on_home(None), enter_library("Music")), 6000),
-    ("06-search", lambda: app.search_entry.set_text("live"), 5000),
-    ("07-detail", lambda: open_first("Movie", "Movies"), 6000),
+    ("06-series-lib", lambda: (app.on_home(None), enter_library("Series")), 6000),
+    ("07-series-drill", lambda: open_first("Series", "Series"), 6000),
+    ("08-search", lambda: app.search_entry.set_text("live"), 5000),
+    ("09-detail", lambda: open_first("Movie", "Movies"), 6500),
 ]
 
 _idx = [0]

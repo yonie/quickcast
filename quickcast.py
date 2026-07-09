@@ -595,7 +595,10 @@ class QuickCast:
         return data.get("Items", []) if data else []
 
     def fetch_item(self, item_id):
-        return self.jf_request(f"/Users/{self.user_id}/Items/{item_id}")
+        return self.jf_request(
+            f"/Users/{self.user_id}/Items/{item_id}",
+            params={"Fields": "MediaSources,MediaStreams,Overview,Genres,People"},
+        )
 
     def fetch_image(self, item_id, size=300):
         if not self.server_url:
@@ -905,6 +908,59 @@ class QuickCast:
         y = item.get("ProductionYear")
         return str(y) if y else ""
 
+    @staticmethod
+    def _fmt_size(n):
+        if not n:
+            return None
+        gb = n / 1_000_000_000
+        if gb >= 1:
+            return f"{gb:.1f} GB"
+        return f"{n / 1_000_000:.0f} MB"
+
+    @staticmethod
+    def _res_label(h):
+        if h >= 2160:
+            return "4K"
+        if h >= 1080:
+            return "1080p"
+        if h >= 720:
+            return "720p"
+        return f"{h}p"
+
+    def _media_tech_chips(self, item):
+        """Pro-user tech details from the first media source:
+        container, resolution, video/audio codec, bitrate, file size."""
+        srcs = item.get("MediaSources") or []
+        if not srcs:
+            return []
+        src = srcs[0]
+        chips = []
+        if src.get("Container"):
+            chips.append(src["Container"].upper())
+        streams = src.get("MediaStreams") or []
+        v = next((s for s in streams if s.get("Type") == "Video"), None)
+        if v:
+            if v.get("Height"):
+                chips.append(self._res_label(v["Height"]))
+            if v.get("Codec"):
+                chips.append(v["Codec"].upper())
+        a = next((s for s in streams if s.get("Type") == "Audio"), None)
+        if a:
+            parts = []
+            if a.get("Codec"):
+                parts.append(a["Codec"].upper())
+            ch = a.get("Channels")
+            if ch:
+                parts.append({1: "Mono", 2: "Stereo", 6: "5.1", 8: "7.1"}.get(ch, f"{ch}ch"))
+            if parts:
+                chips.append(" ".join(parts))
+        if src.get("Bitrate"):
+            chips.append(f"{src['Bitrate'] / 1_000_000:.1f} Mbps")
+        sz = self._fmt_size(src.get("Size"))
+        if sz:
+            chips.append(sz)
+        return chips
+
     # ── Library / content tile ──────────────────────────
     def add_lib_card(self, item):
         item_id = item.get("Id")
@@ -1113,6 +1169,23 @@ class QuickCast:
 
         right_col.pack_start(title_label, False, False, 0)
         right_col.pack_start(meta_label, False, False, 0)
+
+        # Pro-user media tech chips (container, resolution, codecs, size…)
+        tech = self._media_tech_chips(item)
+        if tech:
+            tech_box = Gtk.FlowBox()
+            tech_box.set_selection_mode(Gtk.SelectionMode.NONE)
+            tech_box.set_max_children_per_line(10)
+            tech_box.set_column_spacing(6)
+            tech_box.set_row_spacing(6)
+            tech_box.set_halign(Gtk.Align.START)
+            tech_box.set_margin_top(10)
+            for t in tech:
+                chip = Gtk.Label(label=t)
+                chip.get_style_context().add_class("chip")
+                tech_box.add(chip)
+            right_col.pack_start(tech_box, False, False, 0)
+
         right_col.pack_start(overview_label, False, False, 0)
         right_col.pack_start(cast_btn, False, False, 0)
 
@@ -1214,24 +1287,42 @@ class QuickCast:
             return f"{hours}:{mins % 60:02d}:{secs:02d}"
         return f"{mins}:{secs:02d}"
 
+    def _start_status_poll(self):
+        """Poll the connected device continuously so the now-playing bar
+        reflects whatever the Chromecast is doing, even casts we didn't start."""
+        if self._progress_timer_id:
+            GLib.source_remove(self._progress_timer_id)
+        self._progress_timer_id = GLib.timeout_add(1000, self._poll_progress)
+
+    def _reset_now_playing(self):
+        self.np_title.set_text("Nothing casting")
+        self.np_subtitle.set_text("")
+        self.np_progress.set_fraction(0.0)
+        self.np_time_label.set_text("0:00 / 0:00")
+        self.np_thumbnail.clear()
+        self._set_play_icon(False)
+
     def _poll_progress(self):
-        if not self.chromecast or not self.chromecast.media_controller.is_active:
+        if not self.chromecast:
+            self._progress_timer_id = None
             return False
         try:
-            status = self.chromecast.media_controller.status
-            if status and status.duration:
-                fraction = (status.current_time or 0) / status.duration
-                time_str = f"{self._format_time(status.current_time)} / {self._format_time(status.duration)}"
-                GLib.idle_add(self.np_progress.set_fraction, fraction)
-                GLib.idle_add(self.np_time_label.set_text, time_str)
-
-                state = status.player_state
-                if state == "PLAYING":
-                    GLib.idle_add(self._set_play_icon, True)
-                elif state == "PAUSED":
-                    GLib.idle_add(self._set_play_icon, False)
-        except Exception:
-            pass
+            st = self.chromecast.media_controller.status
+            active = st and st.player_state in ("PLAYING", "PAUSED", "BUFFERING")
+            if active and st.duration:
+                title = getattr(st, "title", None)
+                if title and title != self.np_title.get_text():
+                    GLib.idle_add(self.np_title.set_text, title)
+                    GLib.idle_add(self.np_subtitle.set_text, getattr(st, "series_title", "") or "")
+                fraction = (st.current_time or 0) / st.duration
+                GLib.idle_add(self.np_progress.set_fraction, min(1.0, max(0.0, fraction)))
+                GLib.idle_add(self.np_time_label.set_text,
+                              f"{self._format_time(st.current_time)} / {self._format_time(st.duration)}")
+                GLib.idle_add(self._set_play_icon, st.player_state != "PAUSED")
+            elif self.np_title.get_text() not in ("", "Nothing casting"):
+                GLib.idle_add(self._reset_now_playing)
+        except Exception as e:
+            log(f"poll error: {e}")
         return True
 
     def on_play_pause(self, widget):
@@ -1366,6 +1457,7 @@ class QuickCast:
         self.chromecast = cc
         self.update_status()
         self.show_toast(f"Connected to {cc.name}")
+        self._start_status_poll()  # reflect whatever it is already playing
         dialog.response(Gtk.ResponseType.CANCEL)
 
         # If detail page is visible, refresh cast button
