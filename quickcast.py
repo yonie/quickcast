@@ -173,6 +173,7 @@ class QuickCast:
         self.title_path = []            # human-readable names parallel to browsing_path
         self.sort_by = "SortName"
         self.sort_order = "Ascending"
+        self.filter_genre = None
         self._search_timer_id = None
         self._last_error = None
         self._lazy = []  # pending artwork loads for grid cards (loaded when visible)
@@ -245,8 +246,14 @@ class QuickCast:
         self.sort_combo.connect("changed", self.on_sort_changed)
         self.sort_combo.set_no_show_all(True)  # only shown inside a library
 
+        self.genre_combo = Gtk.ComboBoxText()
+        self.genre_combo.set_tooltip_text("Filter by genre")
+        self.genre_combo.connect("changed", self.on_genre_changed)
+        self.genre_combo.set_no_show_all(True)  # only shown when a library has genres
+
         self.toolbar.pack_end(self.status_label, False, False, 8)
         self.toolbar.pack_end(self.sort_combo, False, False, 6)
+        self.toolbar.pack_end(self.genre_combo, False, False, 6)
         self.toolbar.pack_end(self.search_entry, False, False, 6)
 
     # ── Content area ────────────────────────────────────
@@ -588,13 +595,18 @@ class QuickCast:
             f"/Users/{self.user_id}/Items",
             params={
                 "ParentId": parent_id,
-                "Recursive": False,
+                "Recursive": bool(self.filter_genre),
                 "SortBy": self.sort_by,
                 "SortOrder": self.sort_order,
                 "Fields": self.ITEM_FIELDS,
+                **({"Genres": self.filter_genre} if self.filter_genre else {}),
             },
         )
         return data.get("Items", []) if data else []
+
+    def fetch_genres(self, parent_id):
+        data = self.jf_request("/Genres", params={"ParentId": parent_id, "SortBy": "SortName"})
+        return [g.get("Name") for g in (data.get("Items", []) if data else []) if g.get("Name")]
 
     def fetch_search(self, term):
         data = self.jf_request(
@@ -663,8 +675,11 @@ class QuickCast:
             self.show_placeholder("Connect to your Jellyfin server to get started", "🔌")
             return
         self.browsing_path = []
+        self.title_path = []
         self.current_parent_id = None
         self.sort_combo.hide()
+        self.genre_combo.hide()
+        self.filter_genre = None
         if self.search_entry.get_text():
             # clear silently (avoid re-triggering search-changed → home loop)
             self.search_entry.handler_block_by_func(self.on_search_changed)
@@ -689,6 +704,35 @@ class QuickCast:
         elif self.current_parent_id:
             self.show_loading_state("Sorting…")
             threading.Thread(target=self._load_items, args=(self.current_parent_id,), daemon=True).start()
+
+    def on_genre_changed(self, combo):
+        label = combo.get_active_text()
+        if label is None:
+            return
+        new = None if label == "All genres" else label
+        if new == self.filter_genre:
+            return
+        self.filter_genre = new
+        if self.current_parent_id:
+            self.show_loading_state(f"Filtering {label}…")
+            threading.Thread(target=self._load_items, args=(self.current_parent_id,), daemon=True).start()
+
+    def _load_genres(self, parent_id):
+        genres = self.fetch_genres(parent_id)
+        GLib.idle_add(self._fill_genres, genres, parent_id)
+
+    def _fill_genres(self, genres, parent_id):
+        if parent_id != self.current_parent_id:
+            return False  # navigated away before genres arrived
+        self.genre_combo.handler_block_by_func(self.on_genre_changed)
+        self.genre_combo.remove_all()
+        self.genre_combo.append_text("All genres")
+        for g in genres:
+            self.genre_combo.append_text(g)
+        self.genre_combo.set_active(0)
+        self.genre_combo.handler_unblock_by_func(self.on_genre_changed)
+        (self.genre_combo.show if genres else self.genre_combo.hide)()
+        return False
 
     def on_search_changed(self, entry):
         term = entry.get_text().strip()
@@ -740,6 +784,8 @@ class QuickCast:
                 self.title_path.pop()
             parent_id = self.browsing_path[-1]
             self.current_parent_id = parent_id
+            self.filter_genre = None
+            self.genre_combo.hide()
             self.show_loading_state("Loading…")
             threading.Thread(target=self._load_items, args=(parent_id,), daemon=True).start()
         else:
@@ -1101,6 +1147,11 @@ class QuickCast:
             self.title_path.append(name)
             self.current_parent_id = parent_id
             self.sort_combo.show()
+            # genre filter only applies to a top-level video library
+            self.filter_genre = None
+            self.genre_combo.hide()
+            if item_type == "CollectionFolder":
+                threading.Thread(target=self._load_genres, args=(parent_id,), daemon=True).start()
             self.show_loading_state(f"Loading {name}…")
             threading.Thread(target=self._load_items, args=(parent_id,), daemon=True).start()
         else:
