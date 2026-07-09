@@ -175,6 +175,7 @@ class QuickCast:
         self.sort_order = "Ascending"
         self._search_timer_id = None
         self._last_error = None
+        self._lazy = []  # pending artwork loads for grid cards (loaded when visible)
 
         # Build UI
         self._build_toolbar()
@@ -330,6 +331,8 @@ class QuickCast:
         self.content_box.pack_start(self.loading_box, True, True, 0)
 
         self.scrolled_window.add(self.content_box)
+        self.scrolled_window.get_vadjustment().connect("value-changed", self._update_visible_images)
+        self.scrolled_window.connect("size-allocate", self._update_visible_images)
 
     # ── Now playing bar ─────────────────────────────────
     def _build_now_playing(self):
@@ -723,6 +726,7 @@ class QuickCast:
         self.set_status(f"{len(items)} result{'s' if len(items) != 1 else ''}")
         self.show_browse()
         self.flowbox.show_all()
+        GLib.idle_add(self._update_visible_images)
         log(f"Search '{term}': {len(items)} results")
 
     def on_back(self, widget):
@@ -749,6 +753,7 @@ class QuickCast:
     def _clear_grid(self):
         # New view: invalidate in-flight image loads so they don't paint here
         self._render_generation += 1
+        self._lazy = []
         for child in self.cw_box.get_children():
             self.cw_box.remove(child)
         for child in self.flowbox.get_children():
@@ -785,6 +790,7 @@ class QuickCast:
 
         self.set_status(f"{len(views)} librar{'ies' if len(views) != 1 else 'y'}")
         self.show_browse()
+        GLib.idle_add(self._update_visible_images)
         log(f"Home rendered: {len(resume_items)} resume, {len(views)} views")
 
     def _load_items(self, parent_id):
@@ -816,12 +822,14 @@ class QuickCast:
         self.set_status(f"{len(items)} item{'s' if len(items) != 1 else ''}")
         self.show_browse()
         self.flowbox.show_all()
+        GLib.idle_add(self._update_visible_images)
         log(f"Rendered {len(items)} items")
 
     # ── Image helpers ───────────────────────────────────
     def _set_image_async(self, image, item_id, w, h, fallback_icon):
         """Show a faint placeholder icon immediately, then load the real
-        artwork on a worker thread. Never blocks the main loop."""
+        artwork on a worker thread. Never blocks the main loop. Eager: use
+        for the small Continue Watching row."""
         gen = self._render_generation
         image.set_size_request(w, h)
         image.set_from_icon_name(fallback_icon, Gtk.IconSize.DIALOG)
@@ -838,6 +846,49 @@ class QuickCast:
             GLib.idle_add(apply)
 
         self._img_pool.submit(work)
+
+    def _lazy_image(self, image, item_id, w, h, fallback_icon):
+        """Register artwork to load only once the card scrolls into view.
+        Keeps huge grids (e.g. 862 albums) from firing hundreds of requests."""
+        image.set_size_request(w, h)
+        image.set_from_icon_name(fallback_icon, Gtk.IconSize.DIALOG)
+        self._lazy.append({"image": image, "id": item_id, "w": w, "h": h,
+                           "loaded": False, "gen": self._render_generation})
+
+    def _load_lazy_rec(self, rec):
+        rec["loaded"] = True
+        gen, image, item_id, w, h = rec["gen"], rec["image"], rec["id"], rec["w"], rec["h"]
+
+        def work():
+            pb = self._load_pixbuf_aspect(item_id, w, h)
+
+            def apply():
+                if gen == self._render_generation and pb is not None:
+                    image.set_from_pixbuf(pb)
+                return False
+
+            GLib.idle_add(apply)
+
+        self._img_pool.submit(work)
+
+    def _update_visible_images(self, *_args):
+        """Load artwork for cards within (or one page from) the viewport."""
+        if not self._lazy:
+            return
+        adj = self.scrolled_window.get_vadjustment()
+        top = adj.get_value()
+        page = adj.get_page_size() or 800
+        bottom = top + page
+        margin = page  # preload a page ahead and behind
+        for rec in self._lazy:
+            if rec["loaded"] or rec["gen"] != self._render_generation:
+                continue
+            coords = rec["image"].translate_coordinates(self.content_box, 0, 0)
+            if not coords:
+                continue
+            y = coords[1]
+            if (y + rec["h"]) >= (top - margin) and y <= (bottom + margin):
+                self._load_lazy_rec(rec)
 
     def _load_pixbuf_aspect(self, item_id, target_w, target_h):
         img_data = self.fetch_image(item_id, size=max(target_w, target_h))
@@ -1004,7 +1055,7 @@ class QuickCast:
         img_wrap.set_size_request(img_w, img_h)
 
         image = Gtk.Image()
-        self._set_image_async(image, item_id, img_w, img_h, icon)
+        self._lazy_image(image, item_id, img_w, img_h, icon)
         img_wrap.pack_start(image, True, True, 0)
 
         title_label = Gtk.Label(label=name)
