@@ -1183,12 +1183,18 @@ class QuickCast:
         overview_label.set_justify(Gtk.Justification.LEFT)
         overview_label.set_xalign(0)
 
-        # Cast button
+        # Cast button (kept referenced so connecting later can enable it)
         cast_btn = Gtk.Button(label="▶  Cast to TV")
         cast_btn.get_style_context().add_class("detail-cast-btn")
         cast_btn.connect("clicked", lambda w: self.cast_item(self._detail_current_item))
         cast_btn.set_halign(Gtk.Align.START)
         cast_btn.set_margin_top(12)
+        self._detail_cast_btn = cast_btn
+
+        # resume hint if partially watched
+        pos = item.get("UserData", {}).get("PlaybackPositionTicks", 0)
+        if pos and runtime:
+            cast_btn.set_label(f"▶  Resume ({self._format_time(pos / 10000000)})")
 
         if not self.chromecast:
             cast_btn.set_label("📺  Select a Chromecast first")
@@ -1271,7 +1277,15 @@ class QuickCast:
             stream_url = f"{self.server_url.rstrip('/')}/Videos/{item_id}/stream?static=true&api_key={self.api_key}"
             log(f"Stream: {stream_url[:80]}... mime={mime}")
 
-            mc.play_media(stream_url, content_type=mime, title=name)
+            # Resume from where it was left off, if partially watched
+            resume_s = 0
+            if item_info:
+                resume_s = item_info.get("UserData", {}).get("PlaybackPositionTicks", 0) / 10000000
+            play_kwargs = {"content_type": mime, "title": name}
+            if resume_s > 10:
+                play_kwargs["current_time"] = resume_s
+                log(f"Resuming at {resume_s:.0f}s")
+            mc.play_media(stream_url, **play_kwargs)
             GLib.idle_add(self._update_now_playing, name, item_id)
         except Exception as e:
             log(f"Cast error: {e}")
@@ -1495,18 +1509,13 @@ class QuickCast:
             GLib.idle_add(self._refresh_detail_cast_button)
 
     def _refresh_detail_cast_button(self):
-        for child in self.detail_box.get_children():
-            for sub in child.get_children():
-                if isinstance(sub, Gtk.Box):
-                    for w in sub.get_children():
-                        if isinstance(w, Gtk.Box):
-                            for ww in w.get_children():
-                                if isinstance(ww, Gtk.Box):
-                                    for www in ww.get_children():
-                                        if isinstance(www, Gtk.Button) and www.get_style_context().has_class("detail-cast-btn"):
-                                            if self.chromecast:
-                                                www.set_label("▶  Cast to TV")
-                                                www.set_sensitive(True)
+        btn = getattr(self, "_detail_cast_btn", None)
+        if btn and self.chromecast:
+            item = self._detail_current_item or {}
+            pos = item.get("UserData", {}).get("PlaybackPositionTicks", 0)
+            btn.set_label(f"▶  Resume ({self._format_time(pos / 10000000)})" if pos
+                          else "▶  Cast to TV")
+            btn.set_sensitive(True)
 
     # ── Server config / Quick Connect ───────────────────
     def show_server_config(self, widget):
