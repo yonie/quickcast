@@ -19,344 +19,88 @@ APP_NAME = "QuickCast"
 ACCENT = "#5B7CFA"
 
 CSS = """
-/* ── Base ───────────────────────────────────────────── */
-window {
-    background-color: #f0f0f2;
-    color: #1a1a1a;
-    font-family: "Inter", "SF Pro", "Segoe UI", "Cantarell", sans-serif;
-}
-scrolledwindow trough {
-    background-color: transparent;
-}
-scrollbar {
-    background-color: transparent;
-}
-scrollbar slider {
-    background-color: #c0c0c5;
-    border-radius: 4px;
-    min-width: 6px;
-    min-height: 6px;
-}
-scrollbar slider:hover {
-    background-color: #a0a0a8;
-}
+/* QuickCast — minimal, theme-adaptive. Trust the native GNOME theme;
+   style structure with named theme colors so it follows the user's
+   light/dark preference instead of imposing our own. */
 
-/* ── Toolbar ────────────────────────────────────────── */
-.toolbar {
-    background-color: #ffffff;
-    padding: 6px 10px;
-    border-bottom: 1px solid #e2e2e5;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
-}
-.toolbar button {
-    background-color: transparent;
-    color: #555;
-    border: none;
-    border-radius: 8px;
-    padding: 7px 14px;
-    font-size: 13px;
-    font-weight: 500;
-    transition: all 150ms ease;
-}
-.toolbar button:hover {
-    background-color: rgba(91,124,250,0.1);
-    color: #333;
-}
-.toolbar button:active {
-    background-color: rgba(91,124,250,0.15);
-}
-.toolbar separator {
-    background-color: #e2e2e5;
-    margin: 4px 6px;
-}
-.status-label {
-    color: #999;
-    font-size: 11px;
-    font-weight: 500;
-}
-.status-dot {
-    font-size: 9px;
-}
+/* ── Section + page headers ─────────────────────────── */
+.section-header { font-size: 15px; font-weight: 800; padding: 16px 18px 6px 18px; }
+.page-title { font-size: 22px; font-weight: 800; padding: 4px 18px 0 18px; }
+.page-sub { color: @insensitive_fg_color; font-size: 12px; padding: 0 18px 6px 18px; }
+.dim { color: @insensitive_fg_color; font-size: 12px; }
+.status-label { color: @insensitive_fg_color; font-size: 12px; }
 
-/* ── Section headers ────────────────────────────────── */
-.section-header {
-    color: #333;
-    font-size: 15px;
-    font-weight: 700;
-    padding: 16px 20px 6px 20px;
-}
-
-/* ── Continue Watching ──────────────────────────────── */
-.cw-scrolled {
-    background-color: transparent;
-}
-.cw-scrolled undershoot {
-    background-color: transparent;
-}
-.cw-card {
-    background-color: #fff;
+/* ── Cards (continue watching + library/content tiles) ─ */
+.card {
+    border: 1px solid @borders;
     border-radius: 10px;
-    border: 1px solid #e2e2e5;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
-    transition: all 200ms ease;
+    background-color: alpha(@theme_base_color, 0.5);
+    transition: all 140ms ease;
 }
-.cw-card:hover {
-    border-color: #c8c8d0;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+.card:hover {
+    background-color: alpha(@theme_fg_color, 0.07);
+    border-color: alpha(@theme_fg_color, 0.28);
 }
-.cw-image-wrap {
-    background-color: #1a1a1a;
-    border-radius: 10px 10px 0 0;
-}
-.cw-progress {
-    background-color: #5B7CFA;
-    min-height: 3px;
-    border-radius: 0;
-}
-.cw-title {
-    color: #333;
-    font-size: 12px;
-    font-weight: 500;
-    padding: 6px 10px 8px 10px;
-}
-
-/* ── Library / folder tiles ─────────────────────────── */
-.lib-card {
-    background-color: #fff;
-    border-radius: 10px;
-    border: 1px solid #e2e2e5;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
-    transition: all 200ms ease;
-}
-.lib-card:hover {
-    border-color: #c8c8d0;
-    box-shadow: 0 4px 14px rgba(0,0,0,0.12);
-}
-.lib-image-wrap {
-    background-color: #2a2a2a;
-    border-radius: 10px 10px 0 0;
-}
-.lib-title {
-    color: #333;
-    font-size: 13px;
-    font-weight: 500;
-    padding: 8px 10px 10px 10px;
-}
+.poster { background-color: alpha(@theme_fg_color, 0.10); border-radius: 10px 10px 0 0; }
+.card-title { font-size: 12px; font-weight: 600; padding: 7px 10px 1px 10px; }
+.card-sub { color: @insensitive_fg_color; font-size: 11px; padding: 0 10px 8px 10px; }
+.cw-progress { background-color: @theme_selected_bg_color; min-height: 3px; border-radius: 0; }
 
 /* ── Loading / placeholder ──────────────────────────── */
-.loading-box {
-    background-color: transparent;
-}
-.loading-label {
-    color: #999;
-    font-size: 13px;
-    font-weight: 500;
-}
-.placeholder {
-    color: #aaa;
-    font-size: 15px;
-    font-weight: 500;
-}
-.placeholder-icon {
-    font-size: 48px;
-    color: #ddd;
-    margin-bottom: 12px;
+.loading-label { color: @insensitive_fg_color; font-size: 13px; }
+.placeholder { color: @insensitive_fg_color; font-size: 15px; }
+.placeholder-icon { font-size: 46px; color: alpha(@theme_fg_color, 0.18); margin-bottom: 8px; }
+.skeleton {
+    border: 1px solid @borders;
+    border-radius: 10px;
+    background-color: alpha(@theme_fg_color, 0.06);
 }
 
 /* ── Detail page ────────────────────────────────────── */
-.detail-backdrop {
-    background-color: #1a1a1a;
-}
-.detail-info {
-    background-color: #f0f0f2;
-    border-radius: 16px 16px 0 0;
-    margin-top: -20px;
-    padding: 24px 28px 28px 28px;
-}
-.detail-title {
-    color: #1a1a1a;
-    font-size: 22px;
-    font-weight: 700;
-}
-.detail-meta {
-    color: #888;
-    font-size: 12px;
-    font-weight: 500;
-}
-.detail-overview {
-    color: #555;
-    font-size: 13px;
-}
-.detail-cast-btn {
-    background-color: #5B7CFA;
-    color: #fff;
-    border: none;
-    border-radius: 10px;
-    padding: 12px 32px;
-    font-size: 15px;
+.detail-backdrop { background-color: #000000; }
+.detail-title { font-size: 26px; font-weight: 800; }
+.detail-meta { color: @insensitive_fg_color; font-size: 13px; font-weight: 600; }
+.detail-overview { font-size: 14px; }
+.chip {
+    background-color: alpha(@theme_fg_color, 0.08);
+    border: 1px solid @borders;
+    border-radius: 13px;
+    padding: 3px 11px;
+    font-size: 11px;
     font-weight: 600;
-    transition: all 200ms ease;
 }
-.detail-cast-btn:hover {
-    background-color: #4a6bef;
-    box-shadow: 0 2px 8px rgba(91,124,250,0.35);
-}
-.detail-cast-btn:disabled {
-    background-color: #c0c0c5;
-    color: #999;
-}
-.detail-back-btn {
-    background-color: rgba(0,0,0,0.5);
-    color: #fff;
-    border: none;
-    border-radius: 20px;
-    padding: 8px 16px;
-    font-size: 13px;
-    font-weight: 500;
-}
-.detail-back-btn:hover {
-    background-color: rgba(0,0,0,0.7);
-}
+.detail-cast-btn { padding: 10px 28px; font-size: 15px; font-weight: 700; }
 
 /* ── Now playing bar ────────────────────────────────── */
-.now-playing {
-    background-color: #ffffff;
-    padding: 12px 20px;
-    border-top: 1px solid #e2e2e5;
-    box-shadow: 0 -1px 3px rgba(0,0,0,0.04);
-}
-.now-playing .title {
-    color: #333;
-    font-size: 13px;
-    font-weight: 600;
-}
-.now-playing .subtitle {
-    color: #aaa;
-    font-size: 11px;
-}
-.now-playing progressbar {
-    min-height: 4px;
-}
-.now-playing progressbar trough {
-    background-color: #e8e8ec;
-    border-radius: 2px;
-}
-.now-playing progressbar progress {
-    background-color: #5B7CFA;
-    border-radius: 2px;
-}
-.now-playing button {
-    background-color: transparent;
-    color: #555;
-    border: none;
-    font-size: 20px;
-    padding: 6px 12px;
-    border-radius: 8px;
-    transition: all 150ms ease;
-}
-.now-playing button:hover {
-    background-color: rgba(91,124,250,0.1);
-    color: #333;
-}
+.now-playing { border-top: 1px solid @borders; padding: 8px 16px; }
+.now-playing .title { font-size: 13px; font-weight: 700; }
+.now-playing .subtitle { color: @insensitive_fg_color; font-size: 11px; }
+.now-playing progressbar { min-height: 4px; }
+.now-playing progressbar progress { background-color: @theme_selected_bg_color; border-radius: 2px; }
 
 /* ── Toast ──────────────────────────────────────────── */
 .toast {
-    background-color: rgba(20,20,25,0.85);
-    color: #fff;
-    padding: 12px 28px;
+    background-color: rgba(0,0,0,0.82);
+    color: #ffffff;
+    padding: 11px 24px;
     border-radius: 10px;
     font-size: 14px;
-    font-weight: 500;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.25);
+    font-weight: 600;
 }
+.toast.error { background-color: rgba(150,40,32,0.92); }
 
-/* ── Dialogs ────────────────────────────────────────── */
-dialog {
-    background-color: #f0f0f2;
-    color: #1a1a1a;
-    border-radius: 12px;
-}
-dialog frame {
-    border: none;
-}
-dialog label {
-    color: #333;
-}
-dialog entry {
-    background-color: #fff;
-    color: #333;
-    border: 1px solid #ddd;
-    border-radius: 8px;
-    padding: 10px 12px;
-    font-size: 14px;
-}
-dialog entry:focus {
-    border-color: #5B7CFA;
-    box-shadow: 0 0 0 2px rgba(91,124,250,0.15);
-}
-dialog button {
-    background-color: #fff;
-    color: #333;
-    border: 1px solid #e2e2e5;
-    border-radius: 8px;
-    padding: 9px 20px;
-    font-size: 13px;
-    font-weight: 500;
-    transition: all 150ms ease;
-}
-dialog button:hover {
-    background-color: #f0f0f2;
-    border-color: #c8c8d0;
-}
-dialog button.suggested {
-    background-color: #5B7CFA;
-    color: #fff;
-    border: none;
-}
-dialog button.suggested:hover {
-    background-color: #4a6bef;
-}
-.qc-code {
-    font-size: 36px;
-    font-weight: 800;
-    color: #5B7CFA;
-    padding: 8px;
-}
-
-/* ── Cast picker ────────────────────────────────────── */
+/* ── Cast picker rows ───────────────────────────────── */
 .cast-row {
-    background-color: #fff;
+    border: 1px solid @borders;
     border-radius: 10px;
-    border: 1px solid #e2e2e5;
-    padding: 14px 16px;
-    margin: 4px 0;
-    transition: all 200ms ease;
+    padding: 12px 14px;
+    margin: 3px 0;
+    transition: all 140ms ease;
 }
-.cast-row:hover {
-    border-color: #5B7CFA;
-    box-shadow: 0 2px 8px rgba(91,124,250,0.12);
-}
-.cast-device-name {
-    font-size: 14px;
-    font-weight: 600;
-    color: #333;
-}
-.cast-device-type {
-    font-size: 11px;
-    color: #999;
-}
-.cast-connect-btn {
-    background-color: #5B7CFA;
-    color: #fff;
-    border: none;
-    border-radius: 8px;
-    padding: 8px 20px;
-    font-size: 13px;
-    font-weight: 600;
-}
-.cast-connect-btn:hover {
-    background-color: #4a6bef;
-}
+.cast-row:hover { background-color: alpha(@theme_fg_color, 0.07); border-color: @theme_selected_bg_color; }
+.cast-device-name { font-size: 14px; font-weight: 700; }
+.cast-device-type { color: @insensitive_fg_color; font-size: 11px; }
+.qc-code { font-size: 34px; font-weight: 800; color: @theme_selected_bg_color; padding: 6px; }
 """
 
 
@@ -918,12 +662,12 @@ class QuickCast:
         played_pct = item.get("UserData", {}).get("PlayedPercentage", 0)
 
         card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
-        card.get_style_context().add_class("cw-card")
+        card.get_style_context().add_class("card")
 
         # Image wrapper (landscape 16:9, 260x146)
         img_w, img_h = 260, 146
         img_wrap = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
-        img_wrap.get_style_context().add_class("cw-image-wrap")
+        img_wrap.get_style_context().add_class("poster")
         img_wrap.set_size_request(img_w, img_h)
 
         image = Gtk.Image()
@@ -945,7 +689,7 @@ class QuickCast:
             img_wrap.pack_end(progress, False, False, 0)
 
         title_label = Gtk.Label(label=name)
-        title_label.get_style_context().add_class("cw-title")
+        title_label.get_style_context().add_class("card-title")
         title_label.set_max_width_chars(30)
         title_label.set_ellipsize(Pango.EllipsizeMode.END)
         title_label.set_halign(Gtk.Align.START)
@@ -967,11 +711,11 @@ class QuickCast:
         item_type = item.get("Type", "")
 
         card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
-        card.get_style_context().add_class("lib-card")
+        card.get_style_context().add_class("card")
 
         img_w, img_h = 170, 255
         img_wrap = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
-        img_wrap.get_style_context().add_class("lib-image-wrap")
+        img_wrap.get_style_context().add_class("poster")
         img_wrap.set_size_request(img_w, img_h)
 
         image = Gtk.Image()
@@ -987,7 +731,7 @@ class QuickCast:
         img_wrap.pack_start(image, True, True, 0)
 
         title_label = Gtk.Label(label=name)
-        title_label.get_style_context().add_class("lib-title")
+        title_label.get_style_context().add_class("card-title")
         title_label.set_max_width_chars(24)
         title_label.set_ellipsize(Pango.EllipsizeMode.END)
         title_label.set_halign(Gtk.Align.START)
