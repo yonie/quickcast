@@ -124,6 +124,15 @@ def log(msg):
 
 
 class QuickCast:
+    SORT_OPTIONS = ["Name", "Year", "Recently added", "Rating", "Random"]
+    SORT_MAP = {
+        "Name": ("SortName", "Ascending"),
+        "Year": ("ProductionYear,PremiereDate,SortName", "Descending"),
+        "Recently added": ("DateCreated,SortName", "Descending"),
+        "Rating": ("CommunityRating,SortName", "Descending"),
+        "Random": ("Random", "Ascending"),
+    }
+
     def __init__(self):
         log("Starting QuickCast")
         self.img_cache = ImageCache()
@@ -151,6 +160,11 @@ class QuickCast:
         self._toast_timer_id = None
         self._progress_timer_id = None
         self._detail_current_item = None
+        self.current_parent_id = None   # library/folder currently browsed (None = home)
+        self.title_path = []            # human-readable names parallel to browsing_path
+        self.sort_by = "SortName"
+        self.sort_order = "Ascending"
+        self._search_timer_id = None
 
         # Build UI
         self._build_toolbar()
@@ -181,26 +195,48 @@ class QuickCast:
                 btn.get_style_context().add_class(css_class)
             return btn
 
-        self.server_btn = make_btn("Server", self.show_server_config)
-        self.refresh_btn = make_btn("Refresh", self.on_refresh)
-        self.cast_btn = make_btn("Cast", self.show_cast_devices)
-        self.stop_btn = make_btn("Stop", self.on_stop_cast)
-        self.back_btn = make_btn("Back", self.on_back)
-        self.home_btn = make_btn("Home", self.on_home)
-        self.help_btn = make_btn("About", self.show_help)
+        self.home_btn = make_btn("🏠 Home", self.on_home)
+        self.back_btn = make_btn("⬅ Back", self.on_back)
+        self.cast_btn = make_btn("📺 Cast", self.show_cast_devices)
+        self.stop_btn = make_btn("⏹ Stop", self.on_stop_cast)
+        self.server_btn = make_btn("🖥️ Server", self.show_server_config)
+        self.help_btn = make_btn("❓", self.show_help)
+        self.help_btn.set_tooltip_text("About QuickCast")
 
+        def sep():
+            s = Gtk.Separator(orientation=Gtk.Orientation.VERTICAL)
+            s.set_margin_start(4)
+            s.set_margin_end(4)
+            return s
+
+        for btn in [self.home_btn, self.back_btn, sep(),
+                    self.cast_btn, self.stop_btn, sep(),
+                    self.server_btn, self.help_btn]:
+            self.toolbar.pack_start(btn, False, False, 0)
+
+        # Right side: search + sort + status
         self.status_label = Gtk.Label(label="")
         self.status_label.get_style_context().add_class("status-label")
         self.status_label.set_halign(Gtk.Align.END)
-        self.status_label.set_margin_start(16)
+        self.status_label.set_margin_start(12)
 
-        def sep():
-            return Gtk.Separator(orientation=Gtk.Orientation.VERTICAL)
+        self.search_entry = Gtk.SearchEntry()
+        self.search_entry.set_placeholder_text("Search library…")
+        self.search_entry.set_width_chars(22)
+        self.search_entry.connect("search-changed", self.on_search_changed)
+        self.search_entry.connect("stop-search", lambda w: self.on_home(None))
 
-        for btn in [self.server_btn, self.refresh_btn, sep(), self.cast_btn, self.stop_btn, sep(),
-                     self.back_btn, self.home_btn, sep(), self.help_btn]:
-            self.toolbar.pack_start(btn, False, False, 0)
+        self.sort_combo = Gtk.ComboBoxText()
+        for label in self.SORT_OPTIONS:
+            self.sort_combo.append_text(label)
+        self.sort_combo.set_active(0)
+        self.sort_combo.set_tooltip_text("Sort order")
+        self.sort_combo.connect("changed", self.on_sort_changed)
+        self.sort_combo.set_no_show_all(True)  # only shown inside a library
+
         self.toolbar.pack_end(self.status_label, False, False, 8)
+        self.toolbar.pack_end(self.sort_combo, False, False, 6)
+        self.toolbar.pack_end(self.search_entry, False, False, 6)
 
     # ── Content area ────────────────────────────────────
     def _build_content(self):
@@ -319,14 +355,18 @@ class QuickCast:
         controls.set_valign(Gtk.Align.CENTER)
         controls.set_margin_end(20)
 
-        def ctrl_btn(label, callback):
-            b = Gtk.Button(label=label)
+        def ctrl_btn(icon_name, callback, tooltip):
+            b = Gtk.Button()
+            b.set_image(Gtk.Image.new_from_icon_name(icon_name, Gtk.IconSize.LARGE_TOOLBAR))
+            b.set_always_show_image(True)
+            b.set_relief(Gtk.ReliefStyle.NONE)
+            b.set_tooltip_text(tooltip)
             b.connect("clicked", callback)
             return b
 
-        self.np_back_btn = ctrl_btn("⏪", self.on_seek_back)
-        self.np_play_btn = ctrl_btn("▶", self.on_play_pause)
-        self.np_fwd_btn = ctrl_btn("⏩", self.on_seek_fwd)
+        self.np_back_btn = ctrl_btn("media-seek-backward-symbolic", self.on_seek_back, "Back 30s")
+        self.np_play_btn = ctrl_btn("media-playback-start-symbolic", self.on_play_pause, "Play / Pause")
+        self.np_fwd_btn = ctrl_btn("media-seek-forward-symbolic", self.on_seek_fwd, "Forward 30s")
 
         controls.pack_start(self.np_back_btn, False, False, 0)
         controls.pack_start(self.np_play_btn, False, False, 0)
@@ -343,9 +383,21 @@ class QuickCast:
         self.np_box.pack_start(controls, False, False, 0)
 
     def _assemble(self):
+        # Slim status bar (count / context), like quickcell's bottom row
+        self.statusbar_label = Gtk.Label(label="")
+        self.statusbar_label.get_style_context().add_class("status-label")
+        self.statusbar_label.set_halign(Gtk.Align.START)
+        self.statusbar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
+        self.statusbar.set_margin_start(18)
+        self.statusbar.set_margin_end(18)
+        self.statusbar.set_margin_top(3)
+        self.statusbar.set_margin_bottom(3)
+        self.statusbar.pack_start(self.statusbar_label, False, False, 0)
+
         main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         main_box.pack_start(self.toolbar, False, False, 0)
         main_box.pack_start(self.scrolled_window, True, True, 0)
+        main_box.pack_start(self.statusbar, False, False, 0)
         main_box.pack_start(self.np_box, False, False, 0)
 
         self.toast_label = Gtk.Label(label="")
@@ -414,6 +466,13 @@ class QuickCast:
         self._toast_timer_id = None
         self.toast_label.hide()
         return False
+
+    def set_status(self, text):
+        self.statusbar_label.set_text(text or "")
+
+    def _set_play_icon(self, playing):
+        icon = "media-playback-pause-symbolic" if playing else "media-playback-start-symbolic"
+        self.np_play_btn.set_image(Gtk.Image.new_from_icon_name(icon, Gtk.IconSize.LARGE_TOOLBAR))
 
     # ── View switching ──────────────────────────────────
     def show_browse(self):
@@ -497,10 +556,33 @@ class QuickCast:
         data = self.jf_request(f"/Users/{self.user_id}/Views")
         return data.get("Items", []) if data else []
 
+    ITEM_FIELDS = "ProductionYear,PremiereDate,CommunityRating,ChildCount,Overview,Genres"
+
     def fetch_items(self, parent_id):
         data = self.jf_request(
             f"/Users/{self.user_id}/Items",
-            params={"ParentId": parent_id, "Recursive": False, "SortBy": "SortName"},
+            params={
+                "ParentId": parent_id,
+                "Recursive": False,
+                "SortBy": self.sort_by,
+                "SortOrder": self.sort_order,
+                "Fields": self.ITEM_FIELDS,
+            },
+        )
+        return data.get("Items", []) if data else []
+
+    def fetch_search(self, term):
+        data = self.jf_request(
+            f"/Users/{self.user_id}/Items",
+            params={
+                "SearchTerm": term,
+                "Recursive": True,
+                "IncludeItemTypes": "Movie,Series,MusicAlbum,MusicArtist,Audio,Episode",
+                "Limit": 80,
+                "SortBy": self.sort_by,
+                "SortOrder": self.sort_order,
+                "Fields": self.ITEM_FIELDS,
+            },
         )
         return data.get("Items", []) if data else []
 
@@ -553,21 +635,83 @@ class QuickCast:
             self.show_placeholder("Connect to your Jellyfin server to get started", "🔌")
             return
         self.browsing_path = []
-        self.show_loading_state("Loading your library...")
+        self.current_parent_id = None
+        self.sort_combo.hide()
+        if self.search_entry.get_text():
+            # clear silently (avoid re-triggering search-changed → home loop)
+            self.search_entry.handler_block_by_func(self.on_search_changed)
+            self.search_entry.set_text("")
+            self.search_entry.handler_unblock_by_func(self.on_search_changed)
+        self.show_loading_state("Loading your library…")
         threading.Thread(target=self._load_home, daemon=True).start()
 
     def on_home(self, widget):
         self.on_refresh(None)
 
+    # ── Sort & search ───────────────────────────────────
+    def on_sort_changed(self, combo):
+        label = combo.get_active_text()
+        if not label or label not in self.SORT_MAP:
+            return
+        self.sort_by, self.sort_order = self.SORT_MAP[label]
+        log(f"Sort → {label} ({self.sort_by} {self.sort_order})")
+        term = self.search_entry.get_text().strip()
+        if term:
+            self._trigger_search(term)
+        elif self.current_parent_id:
+            self.show_loading_state("Sorting…")
+            threading.Thread(target=self._load_items, args=(self.current_parent_id,), daemon=True).start()
+
+    def on_search_changed(self, entry):
+        term = entry.get_text().strip()
+        if self._search_timer_id:
+            GLib.source_remove(self._search_timer_id)
+            self._search_timer_id = None
+        if not term:
+            self.on_home(None)
+            return
+        # debounce: wait 300ms after the last keystroke
+        self._search_timer_id = GLib.timeout_add(300, self._trigger_search, term)
+
+    def _trigger_search(self, term):
+        self._search_timer_id = None
+        self.sort_combo.show()
+        self.show_loading_state(f"Searching “{term}”…")
+        threading.Thread(target=self._load_search, args=(term,), daemon=True).start()
+        return False
+
+    def _load_search(self, term):
+        items = self.fetch_search(term)
+        GLib.idle_add(self._render_search, term, items)
+
+    def _render_search(self, term, items):
+        self._clear_grid()
+        self.cw_header.hide(); self.cw_scroll.hide(); self.cw_separator.hide()
+        self.lib_header.set_text(f"Results for “{term}”")
+        self.lib_header.show()
+        if not items:
+            self.set_status("No results")
+            self.show_placeholder(f"Nothing found for “{term}”", "🔍")
+            return
+        for item in items:
+            self.add_lib_card(item)
+        self.set_status(f"{len(items)} result{'s' if len(items) != 1 else ''}")
+        self.show_browse()
+        self.flowbox.show_all()
+        log(f"Search '{term}': {len(items)} results")
+
     def on_back(self, widget):
         if self.detail_box.get_visible():
-            # From detail → back to browse
+            # From detail → back to the grid we came from
             self.show_browse()
             return
         if len(self.browsing_path) > 1:
             self.browsing_path.pop()
+            if self.title_path:
+                self.title_path.pop()
             parent_id = self.browsing_path[-1]
-            self.show_loading_state("Loading...")
+            self.current_parent_id = parent_id
+            self.show_loading_state("Loading…")
             threading.Thread(target=self._load_items, args=(parent_id,), daemon=True).start()
         else:
             self.on_refresh(None)
@@ -577,11 +721,15 @@ class QuickCast:
         resume = self.fetch_resume()
         GLib.idle_add(self._render_home, views, resume)
 
-    def _render_home(self, views, resume_items):
+    def _clear_grid(self):
         for child in self.cw_box.get_children():
             self.cw_box.remove(child)
         for child in self.flowbox.get_children():
             self.flowbox.remove(child)
+
+    def _render_home(self, views, resume_items):
+        self._clear_grid()
+        self.lib_header.set_text("Libraries")
 
         if resume_items:
             self.cw_header.show()
@@ -603,6 +751,7 @@ class QuickCast:
         else:
             self.lib_header.hide()
 
+        self.set_status(f"{len(views)} librar{'ies' if len(views) != 1 else 'y'}")
         self.show_browse()
         log(f"Home rendered: {len(resume_items)} resume, {len(views)} views")
 
@@ -611,23 +760,24 @@ class QuickCast:
         GLib.idle_add(self._render_items, items)
 
     def _render_items(self, items):
-        for child in self.cw_box.get_children():
-            self.cw_box.remove(child)
-        for child in self.flowbox.get_children():
-            self.flowbox.remove(child)
-
+        self._clear_grid()
         self.cw_header.hide()
         self.cw_scroll.hide()
         self.cw_separator.hide()
-        self.lib_header.hide()
+
+        title = self.title_path[-1] if self.title_path else "Browse"
+        self.lib_header.set_text(title)
+        self.lib_header.show()
 
         if not items:
-            self.show_placeholder("No items found", "📂")
+            self.set_status("Empty")
+            self.show_placeholder("Nothing here yet", "📂")
             return
 
         for item in items:
             self.add_lib_card(item)
 
+        self.set_status(f"{len(items)} item{'s' if len(items) != 1 else ''}")
         self.show_browse()
         self.flowbox.show_all()
         log(f"Rendered {len(items)} items")
@@ -756,10 +906,13 @@ class QuickCast:
         if is_folder:
             parent_id = item["Id"]
             self.browsing_path.append(parent_id)
-            self.show_loading_state("Loading...")
+            self.title_path.append(name)
+            self.current_parent_id = parent_id
+            self.sort_combo.show()
+            self.show_loading_state(f"Loading {name}…")
             threading.Thread(target=self._load_items, args=(parent_id,), daemon=True).start()
         else:
-            self.show_loading_state("Loading details...")
+            self.show_loading_state("Loading details…")
             threading.Thread(target=self._load_detail, args=(item,), daemon=True).start()
 
     # ── Detail page ─────────────────────────────────────
@@ -963,7 +1116,7 @@ class QuickCast:
     def _update_now_playing(self, title, item_id):
         log(f"Now playing: {title}")
         self.np_title.set_text(title)
-        self.np_play_btn.set_label("⏸")
+        self._set_play_icon(True)
         threading.Thread(target=self._fetch_np_thumbnail, args=(item_id,), daemon=True).start()
 
         if self._progress_timer_id:
@@ -1013,9 +1166,9 @@ class QuickCast:
 
                 state = status.player_state
                 if state == "PLAYING":
-                    GLib.idle_add(self.np_play_btn.set_label, "⏸")
+                    GLib.idle_add(self._set_play_icon, True)
                 elif state == "PAUSED":
-                    GLib.idle_add(self.np_play_btn.set_label, "▶")
+                    GLib.idle_add(self._set_play_icon, False)
         except Exception:
             pass
         return True
@@ -1026,11 +1179,11 @@ class QuickCast:
         mc = self.chromecast.media_controller
         if mc.status and mc.status.player_state == "PLAYING":
             mc.pause()
-            self.np_play_btn.set_label("▶")
+            self._set_play_icon(False)
             self.show_toast("Paused")
         else:
             mc.play()
-            self.np_play_btn.set_label("⏸")
+            self._set_play_icon(True)
             self.show_toast("Playing")
 
     def on_seek_fwd(self, widget):
@@ -1058,7 +1211,7 @@ class QuickCast:
         self.np_progress.set_fraction(0.0)
         self.np_time_label.set_text("0:00 / 0:00")
         self.np_thumbnail.clear()
-        self.np_play_btn.set_label("▶")
+        self._set_play_icon(False)
         if self._progress_timer_id:
             GLib.source_remove(self._progress_timer_id)
             self._progress_timer_id = None
