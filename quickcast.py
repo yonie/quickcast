@@ -3,6 +3,7 @@ import os
 import sys
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 import gi
 import pychromecast
@@ -136,6 +137,8 @@ class QuickCast:
     def __init__(self):
         log("Starting QuickCast")
         self.img_cache = ImageCache()
+        self._img_pool = ThreadPoolExecutor(max_workers=6)
+        self._render_generation = 0  # bump on view change to drop stale image loads
 
         self.window = Gtk.Window(title=APP_NAME)
         self.window.set_default_size(1100, 750)
@@ -722,6 +725,8 @@ class QuickCast:
         GLib.idle_add(self._render_home, views, resume)
 
     def _clear_grid(self):
+        # New view: invalidate in-flight image loads so they don't paint here
+        self._render_generation += 1
         for child in self.cw_box.get_children():
             self.cw_box.remove(child)
         for child in self.flowbox.get_children():
@@ -783,6 +788,26 @@ class QuickCast:
         log(f"Rendered {len(items)} items")
 
     # ── Image helpers ───────────────────────────────────
+    def _set_image_async(self, image, item_id, w, h, fallback_icon):
+        """Show a faint placeholder icon immediately, then load the real
+        artwork on a worker thread. Never blocks the main loop."""
+        gen = self._render_generation
+        image.set_size_request(w, h)
+        image.set_from_icon_name(fallback_icon, Gtk.IconSize.DIALOG)
+
+        def work():
+            pb = self._load_pixbuf_aspect(item_id, w, h)
+
+            def apply():
+                # drop if the user navigated away since this was queued
+                if gen == self._render_generation and pb is not None:
+                    image.set_from_pixbuf(pb)
+                return False
+
+            GLib.idle_add(apply)
+
+        self._img_pool.submit(work)
+
     def _load_pixbuf_aspect(self, item_id, target_w, target_h):
         img_data = self.fetch_image(item_id, size=max(target_w, target_h))
         if not img_data:
@@ -821,13 +846,7 @@ class QuickCast:
         img_wrap.set_size_request(img_w, img_h)
 
         image = Gtk.Image()
-        image.set_size_request(img_w, img_h)
-
-        pixbuf = self._load_pixbuf_aspect(item_id, img_w, img_h)
-        if pixbuf:
-            image.set_from_pixbuf(pixbuf)
-        else:
-            image.set_from_icon_name("video-display", Gtk.IconSize.DIALOG)
+        self._set_image_async(image, item_id, img_w, img_h, "video-display-symbolic")
 
         img_wrap.pack_start(image, True, True, 0)
 
@@ -869,14 +888,8 @@ class QuickCast:
         img_wrap.set_size_request(img_w, img_h)
 
         image = Gtk.Image()
-        image.set_size_request(img_w, img_h)
-
-        pixbuf = self._load_pixbuf_aspect(item_id, img_w, img_h)
-        if pixbuf:
-            image.set_from_pixbuf(pixbuf)
-        else:
-            icon = "folder-music" if "Music" in item_type else "folder"
-            image.set_from_icon_name(icon, Gtk.IconSize.DIALOG)
+        icon = "folder-music-symbolic" if "Music" in item_type else "folder-symbolic"
+        self._set_image_async(image, item_id, img_w, img_h, icon)
 
         img_wrap.pack_start(image, True, True, 0)
 
@@ -1065,7 +1078,10 @@ class QuickCast:
 
         self.detail_box.pack_start(backdrop_wrap, False, False, 0)
         self.detail_box.pack_start(info_box, True, True, 0)
-        self.detail_box.show_all()
+        # detail_box itself has no_show_all set, so show_all() on it is a no-op;
+        # show each child subtree explicitly instead.
+        for child in self.detail_box.get_children():
+            child.show_all()
 
         self.show_detail_view()
         log(f"Detail rendered: {name}")
