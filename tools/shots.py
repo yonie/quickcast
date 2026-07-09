@@ -28,30 +28,28 @@ H = int(sys.argv[3]) if len(sys.argv) > 3 else 780
 os.makedirs(OUT, exist_ok=True)
 
 app = quickcast.QuickCast()
-app.window.set_default_size(W, H)
-app.window.resize(W, H)
-app.window.move(40, 40)
+
+# Reparent the UI into an OffscreenWindow: renders to a buffer independent of
+# the compositor, so captures are reliable even when nothing is visible on
+# screen (Wayland throttles frames for hidden windows -> stale grabs).
+_child = app.window.get_child()
+app.window.remove(_child)
+_off = Gtk.OffscreenWindow()
+_off.add(_child)
+_off.set_size_request(W, H)
+_off.show_all()
 
 
 def capture(name):
-    """Grab the window contents. Reliable under Xvfb (recommended) where the
-    virtual framebuffer is always live; also works when the window is visible.
-
-    Run headless & deterministic with:
-      xvfb-run -a --server-args="-screen 0 1220x840x24" \\
-        python3 tools/shots.py build/screenshots
-    """
     path = os.path.join(OUT, name + ".png")
-    app.window.present()
     while Gtk.events_pending():
         Gtk.main_iteration_do(False)
-    gw = app.window.get_window()
-    pb = Gdk.pixbuf_get_from_window(gw, 0, 0, gw.get_width(), gw.get_height())
+    pb = _off.get_pixbuf()
     if pb is None:
-        print(f"[shots] {name}: FAIL (no pixbuf; run under xvfb-run)", flush=True)
+        print(f"[shots] {name}: FAIL (no pixbuf)", flush=True)
         return
     pb.savev(path, "png", [], [])
-    print(f"[shots] {name}: ok", flush=True)
+    print(f"[shots] {name}: ok {pb.get_width()}x{pb.get_height()}", flush=True)
 
 
 def _view(name):

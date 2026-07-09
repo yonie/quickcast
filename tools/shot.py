@@ -24,28 +24,24 @@ H = int(sys.argv[4]) if len(sys.argv) > 4 else 780
 os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
 
 app = quickcast.QuickCast()
-app.window.set_default_size(W, H)
-app.window.resize(W, H)
-app.window.move(40, 40)
+
+_child = app.window.get_child()
+app.window.remove(_child)
+_off = Gtk.OffscreenWindow()
+_off.add(_child)
+_off.set_size_request(W, H)
+_off.show_all()
 
 
 def take():
-    gwin = app.window.get_window()
-    ok = False
-    try:
-        xid = gwin.get_xid()
-        r = subprocess.run(["import", "-window", str(xid), out], capture_output=True, text=True)
-        ok = r.returncode == 0
-    except Exception:
-        pass
-    if not ok:
-        try:
-            pb = Gdk.pixbuf_get_from_window(gwin, 0, 0, gwin.get_width(), gwin.get_height())
-            pb.savev(out, "png", [], [])
-            ok = True
-        except Exception as e:
-            print(f"[shot] gdk grab failed: {e}", flush=True)
-    print(f"[shot] {'saved ' + out if ok else 'FAILED'}", flush=True)
+    while Gtk.events_pending():
+        Gtk.main_iteration_do(False)
+    pb = _off.get_pixbuf()
+    if pb is not None:
+        pb.savev(out, "png", [], [])
+        print(f"[shot] saved {out}", flush=True)
+    else:
+        print("[shot] FAILED (no pixbuf)", flush=True)
     Gtk.main_quit()
     return False
 

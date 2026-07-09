@@ -1203,9 +1203,12 @@ class QuickCast:
             tech_box = Gtk.FlowBox()
             tech_box.set_selection_mode(Gtk.SelectionMode.NONE)
             tech_box.set_max_children_per_line(10)
+            tech_box.set_min_children_per_line(len(tech))
             tech_box.set_column_spacing(6)
             tech_box.set_row_spacing(6)
-            tech_box.set_halign(Gtk.Align.START)
+            tech_box.set_halign(Gtk.Align.FILL)
+            tech_box.set_hexpand(True)
+            tech_box.set_homogeneous(False)
             tech_box.set_margin_top(10)
             for t in tech:
                 chip = Gtk.Label(label=t)
