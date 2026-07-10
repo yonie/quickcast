@@ -837,7 +837,9 @@ class QuickCast:
 
     def _render_search(self, term, items):
         self._clear_grid()
-        self.cw_header.hide(); self.cw_scroll.hide(); self.cw_separator.hide()
+        self.cw_header.hide()
+        self.cw_scroll.hide()
+        self.cw_separator.hide()
         self.lib_header.set_text(f"Results for “{term}”")
         self.lib_header.show()
         if not items:
@@ -1257,7 +1259,6 @@ class QuickCast:
 
     def _render_detail(self, item, backdrop_bytes, poster_pixbuf):
         self._detail_current_item = item
-        item_id = item.get("Id")
         name = item.get("Name", "Unknown")
         overview = item.get("Overview", "")
         year = item.get("ProductionYear", "")
@@ -1284,7 +1285,6 @@ class QuickCast:
                 loader.close()
                 pb = loader.get_pixbuf()
                 if pb:
-                    win_w = self.window.get_size()[0]
                     new_h = 280
                     new_w = int(pb.get_width() * new_h / pb.get_height())
                     scaled = pb.scale_simple(new_w, new_h, GdkPixbuf.InterpType.BILINEAR)

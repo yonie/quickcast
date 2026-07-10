@@ -146,7 +146,6 @@ class MockData:
         elif parent_id == "lib-music":
             out = [self._artist(i) for i in range(len(ARTIST_NAMES))]
         elif parent_id.startswith("series-") and "-s" not in parent_id:
-            n = int(parent_id.split("-")[1])
             seasons = _rand(parent_id + "c", 2, 4)
             out = [{"Id": f"{parent_id}-s{s}", "Name": f"Season {s}", "Type": "Season",
                     "ProductionYear": 2015 + s} for s in range(1, seasons + 1)]
@@ -224,7 +223,6 @@ class MockData:
             n = int(item_id.split("movie-")[-1])
             it = self._movie(n, item_id.startswith("kid-"))
         elif "-e" in item_id:
-            parts = item_id
             s = int(item_id.split("-s")[1].split("-e")[0])
             e = int(item_id.split("-e")[1])
             it = {"Id": item_id, "Name": f"Episode {e}", "Type": "Episode",
