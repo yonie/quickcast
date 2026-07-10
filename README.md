@@ -47,9 +47,23 @@ approve the code in Jellyfin (Settings → Quick Connect). Config is stored in
 | Esc | Back (or clear search) |
 | Space | Play / pause (while casting) |
 
+## Mock mode
+
+Run with invented libraries and procedurally-drawn placeholder artwork (no
+server, no network, no copyrighted content) — handy for screenshots, demos and
+regression tests:
+
+```bash
+python3 quickcast.py --mock       # or QUICKCAST_MOCK=1 python3 quickcast.py
+```
+
+Mock data is deterministic (derived from item ids), so screenshots are stable
+across runs. Implemented in `mockdata.py`.
+
 ## Screenshots (development)
 
-`tools/shots.py` drives the app through its key states and writes one PNG each.
+`tools/shots.py` drives the app through its key states and writes one PNG each
+(it uses mock mode, so the set is deterministic and copyright-free).
 Run it under a virtual framebuffer for deterministic, occlusion-independent
 captures (Wayland throttles frames for hidden windows):
 

@@ -23,7 +23,7 @@ W = int(sys.argv[3]) if len(sys.argv) > 3 else 1180
 H = int(sys.argv[4]) if len(sys.argv) > 4 else 780
 os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
 
-app = quickcast.QuickCast()
+app = quickcast.QuickCast(mock=True)  # deterministic, copyright-free data
 
 _child = app.window.get_child()
 app.window.remove(_child)

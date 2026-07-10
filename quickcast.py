@@ -143,8 +143,13 @@ class QuickCast:
         "Random": ("Random", "Ascending"),
     }
 
-    def __init__(self):
-        log("Starting QuickCast")
+    def __init__(self, mock=False):
+        log("Starting QuickCast" + (" [MOCK]" if mock else ""))
+        self.mock = mock
+        self._mock = None
+        if mock:
+            import mockdata
+            self._mock = mockdata.MockData()
         self.img_cache = ImageCache()
         self._img_pool = ThreadPoolExecutor(max_workers=6)
         self._render_generation = 0  # bump on view change to drop stale image loads
@@ -192,7 +197,10 @@ class QuickCast:
         self.window.show_all()
         log("Window shown")
 
-        self.load_config()
+        if self.mock:
+            self.server_url, self.api_key, self.user_id = "mock://server", "mock", "mock"
+        else:
+            self.load_config()
         self.update_status()
         log(f"Config: server={self.server_url}, key={'set' if self.api_key else 'none'}, user={'set' if self.user_id else 'none'}")
 
@@ -601,6 +609,8 @@ class QuickCast:
             return None
 
     def fetch_user_views(self):
+        if self.mock:
+            return self._mock.views()
         if not self.user_id:
             data = self.jf_request("/Users")
             if data and len(data) > 0:
@@ -615,6 +625,9 @@ class QuickCast:
                    "Genres,AlbumArtist,Artists,IndexNumber,ParentIndexNumber")
 
     def fetch_items(self, parent_id):
+        if self.mock:
+            return self._mock.items(parent_id, self.sort_by, self.sort_order,
+                                    self.filter_genre, self.filter_decade)
         data = self.jf_request(
             f"/Users/{self.user_id}/Items",
             params={
@@ -637,10 +650,14 @@ class QuickCast:
         return ",".join(str(start + i) for i in range(10))
 
     def fetch_genres(self, parent_id):
+        if self.mock:
+            return self._mock.genres(parent_id)
         data = self.jf_request("/Genres", params={"ParentId": parent_id, "SortBy": "SortName"})
         return [g.get("Name") for g in (data.get("Items", []) if data else []) if g.get("Name")]
 
     def fetch_search(self, term):
+        if self.mock:
+            return self._mock.search(term)
         data = self.jf_request(
             f"/Users/{self.user_id}/Items",
             params={
@@ -656,10 +673,14 @@ class QuickCast:
         return data.get("Items", []) if data else []
 
     def fetch_resume(self):
+        if self.mock:
+            return self._mock.resume()
         data = self.jf_request(f"/Users/{self.user_id}/Items/Resume", params={"Limit": 20})
         return data.get("Items", []) if data else []
 
     def fetch_item(self, item_id):
+        if self.mock:
+            return self._mock.item(item_id)
         return self.jf_request(
             f"/Users/{self.user_id}/Items/{item_id}",
             params={"Fields": "MediaSources,MediaStreams,Overview,Genres,People"},
@@ -671,6 +692,10 @@ class QuickCast:
         cached = self.img_cache.get(item_id, size)
         if cached:
             return cached
+        if self.mock:
+            data = self._mock.image(item_id, size)
+            self.img_cache.put(item_id, size, data)
+            return data
         params = {"maxWidth": size, "maxHeight": size, "quality": 85}
         url = f"{self.server_url.rstrip('/')}/Items/{item_id}/Images/Primary"
         headers = {}
@@ -688,6 +713,8 @@ class QuickCast:
     def fetch_backdrop(self, item_id, size=1280):
         if not self.server_url:
             return None
+        if self.mock:
+            return self._mock.backdrop(item_id, size)
         url = f"{self.server_url.rstrip('/')}/Items/{item_id}/Images/Backdrop"
         headers = {}
         if self.api_key:
@@ -1918,7 +1945,8 @@ A minimal Jellyfin remote with Chromecast support.
 
 def main():
     log("main()")
-    app = QuickCast()
+    mock = "--mock" in sys.argv or os.environ.get("QUICKCAST_MOCK") == "1"
+    QuickCast(mock=mock)
     Gtk.main()
     log("exit")
 

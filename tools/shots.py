@@ -27,7 +27,7 @@ W = int(sys.argv[2]) if len(sys.argv) > 2 else 1180
 H = int(sys.argv[3]) if len(sys.argv) > 3 else 780
 os.makedirs(OUT, exist_ok=True)
 
-app = quickcast.QuickCast()
+app = quickcast.QuickCast(mock=True)  # deterministic, copyright-free data
 
 # Reparent the UI into an OffscreenWindow: renders to a buffer independent of
 # the compositor, so captures are reliable even when nothing is visible on
@@ -82,7 +82,7 @@ STAGES = [
     ("05-music-grid", lambda: (app.on_home(None), enter_library("Music")), 6000),
     ("06-series-lib", lambda: (app.on_home(None), enter_library("Series")), 6000),
     ("07-series-drill", lambda: open_first("Series", "Series"), 6000),
-    ("08-search", lambda: app.search_entry.set_text("live"), 5000),
+    ("08-search", lambda: app.search_entry.set_text("the"), 5000),
     ("09-detail", lambda: open_first("Movie", "Movies"), 6500),
 ]
 
