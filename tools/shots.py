@@ -1,13 +1,10 @@
 #!/usr/bin/env python3
 """Regression screenshot set for QuickCast.
 
-Drives one app instance through its key states, capturing each to <outdir>.
-Uses a real Jellyfin connection from ~/.config/quickcast.conf.
+Drives one app instance (in --mock mode, so no server and no real content)
+through its key states, capturing each to <outdir> via a Gtk.OffscreenWindow.
 
 Usage: python3 tools/shots.py <outdir> [WIDTH] [HEIGHT]
-
-Captures via ImageMagick `import -window <xid>` on X11, falling back to
-Gdk.pixbuf_get_from_window (works under Wayland).
 """
 import os
 import sys
