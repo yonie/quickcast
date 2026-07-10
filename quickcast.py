@@ -132,6 +132,9 @@ def log(msg):
 
 class QuickCast:
     SORT_OPTIONS = ["Name", "Year", "Recently added", "Rating", "Random"]
+    DECADES = [("All years", None), ("2020s", 2020), ("2010s", 2010), ("2000s", 2000),
+               ("1990s", 1990), ("1980s", 1980), ("1970s", 1970), ("1960s", 1960),
+               ("1950s", 1950), ("Older", 0)]
     SORT_MAP = {
         "Name": ("SortName", "Ascending"),
         "Year": ("ProductionYear,PremiereDate,SortName", "Descending"),
@@ -174,6 +177,7 @@ class QuickCast:
         self.sort_by = "SortName"
         self.sort_order = "Ascending"
         self.filter_genre = None
+        self.filter_decade = None  # start year of decade, e.g. 2010; None = all
         self._search_timer_id = None
         self._last_error = None
         self._lazy = []  # pending artwork loads for grid cards (loaded when visible)
@@ -252,7 +256,16 @@ class QuickCast:
         self.genre_combo.connect("changed", self.on_genre_changed)
         self.genre_combo.set_no_show_all(True)  # only shown when a library has genres
 
+        self.decade_combo = Gtk.ComboBoxText()
+        for label, _start in self.DECADES:
+            self.decade_combo.append_text(label)
+        self.decade_combo.set_active(0)
+        self.decade_combo.set_tooltip_text("Filter by decade")
+        self.decade_combo.connect("changed", self.on_decade_changed)
+        self.decade_combo.set_no_show_all(True)  # only shown inside a library
+
         self.toolbar.pack_end(self.sort_combo, False, False, 0)
+        self.toolbar.pack_end(self.decade_combo, False, False, 0)
         self.toolbar.pack_end(self.genre_combo, False, False, 0)
         self.toolbar.pack_end(self.search_entry, False, False, 0)
 
@@ -606,14 +619,22 @@ class QuickCast:
             f"/Users/{self.user_id}/Items",
             params={
                 "ParentId": parent_id,
-                "Recursive": bool(self.filter_genre),
+                "Recursive": bool(self.filter_genre or self.filter_decade),
                 "SortBy": self.sort_by,
                 "SortOrder": self.sort_order,
                 "Fields": self.ITEM_FIELDS,
                 **({"Genres": self.filter_genre} if self.filter_genre else {}),
+                **({"Years": self._decade_years(self.filter_decade)} if self.filter_decade is not None else {}),
             },
         )
         return data.get("Items", []) if data else []
+
+    @staticmethod
+    def _decade_years(start):
+        # "Older" (start 0) means everything before 1950
+        if start == 0:
+            return ",".join(str(y) for y in range(1900, 1950))
+        return ",".join(str(start + i) for i in range(10))
 
     def fetch_genres(self, parent_id):
         data = self.jf_request("/Genres", params={"ParentId": parent_id, "SortBy": "SortName"})
@@ -690,7 +711,10 @@ class QuickCast:
         self.current_parent_id = None
         self.sort_combo.hide()
         self.genre_combo.hide()
+        self.decade_combo.hide()
         self.filter_genre = None
+        self.filter_decade = None
+        self._reset_decade_combo()
         if self.search_entry.get_text():
             # clear silently (avoid re-triggering search-changed → home loop)
             self.search_entry.handler_block_by_func(self.on_search_changed)
@@ -726,6 +750,23 @@ class QuickCast:
         self.filter_genre = new
         if self.current_parent_id:
             self.show_loading_state(f"Filtering {label}…")
+            threading.Thread(target=self._load_items, args=(self.current_parent_id,), daemon=True).start()
+
+    def _reset_decade_combo(self):
+        self.decade_combo.handler_block_by_func(self.on_decade_changed)
+        self.decade_combo.set_active(0)
+        self.decade_combo.handler_unblock_by_func(self.on_decade_changed)
+
+    def on_decade_changed(self, combo):
+        idx = combo.get_active()
+        if idx < 0:
+            return
+        new = self.DECADES[idx][1]
+        if new == self.filter_decade:
+            return
+        self.filter_decade = new
+        if self.current_parent_id:
+            self.show_loading_state("Filtering…")
             threading.Thread(target=self._load_items, args=(self.current_parent_id,), daemon=True).start()
 
     def _load_genres(self, parent_id):
@@ -796,7 +837,10 @@ class QuickCast:
             parent_id = self.browsing_path[-1]
             self.current_parent_id = parent_id
             self.filter_genre = None
+            self.filter_decade = None
             self.genre_combo.hide()
+            self.decade_combo.hide()
+            self._reset_decade_combo()
             self.show_loading_state("Loading…")
             threading.Thread(target=self._load_items, args=(parent_id,), daemon=True).start()
         else:
@@ -1158,11 +1202,16 @@ class QuickCast:
             self.title_path.append(name)
             self.current_parent_id = parent_id
             self.sort_combo.show()
-            # genre filter only applies to a top-level video library
+            # genre/decade filters apply to a top-level library
             self.filter_genre = None
+            self.filter_decade = None
             self.genre_combo.hide()
+            self._reset_decade_combo()
             if item_type == "CollectionFolder":
+                self.decade_combo.show()
                 threading.Thread(target=self._load_genres, args=(parent_id,), daemon=True).start()
+            else:
+                self.decade_combo.hide()
             self.show_loading_state(f"Loading {name}…")
             threading.Thread(target=self._load_items, args=(parent_id,), daemon=True).start()
         else:
