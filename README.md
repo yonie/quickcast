@@ -5,6 +5,10 @@ libraries, sort and search, then throw anything on the TV. Part of the `quick*`
 family (quicksnip, quickcell): looks devilishly simple, trusts the native GNOME
 theme, stays out of your way.
 
+![QuickCast](screenshot.png)
+
+*(Screenshot uses `--mock` mode: invented titles and rights-free placeholder art.)*
+
 ## Features
 
 - **Browse** every Jellyfin library with artwork that loads asynchronously
