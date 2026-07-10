@@ -57,8 +57,13 @@ regression tests:
 python3 quickcast.py --mock       # or QUICKCAST_MOCK=1 python3 quickcast.py
 ```
 
-Mock data is deterministic (derived from item ids), so screenshots are stable
-across runs. Implemented in `mockdata.py`.
+Artwork is real rights-free photography from [Lorem Picsum](https://picsum.photos)
+(Unsplash-sourced, free to use), seeded per item and cached under
+`~/.cache/quickcast/mock-art/`, so it looks like a genuine library, stays stable
+across runs, and works offline after the first fetch. Set
+`QUICKCAST_MOCK_OFFLINE=1` to skip the network entirely and use procedurally
+drawn placeholders instead. All other mock data is deterministic (derived from
+item ids). Implemented in `mockdata.py`.
 
 ## Screenshots (development)
 

@@ -1,14 +1,21 @@
 """Deterministic mock backend for QuickCast.
 
-Enabled with `--mock` (or QUICKCAST_MOCK=1). Serves invented libraries,
-items and procedurally-drawn placeholder artwork so the app can be
-screenshotted and regression-tested without a real server or copyrighted
-content. All data is derived from ids, so output is stable across runs.
+Enabled with `--mock` (or QUICKCAST_MOCK=1). Serves invented libraries and
+items with real, rights-free artwork from Lorem Picsum (Unsplash-sourced,
+free to use), seeded per item so it is stable across runs and cached to disk
+so it works offline after the first fetch. Falls back to procedurally-drawn
+art when offline. No real server and no copyrighted content, so the app can
+be screenshotted and regression-tested freely.
 """
 import hashlib
 import io
+import os
 
 import cairo
+import requests
+
+_CACHE_DIR = os.path.expanduser("~/.cache/quickcast/mock-art")
+_OFFLINE = os.environ.get("QUICKCAST_MOCK_OFFLINE") == "1"
 
 # ── Invented, non-copyrighted content ───────────────────────────────
 MOVIE_TITLES = [
@@ -64,10 +71,36 @@ class MockData:
         aw, ah = self._aspect(item_id)
         scale = size / max(aw, ah)
         w, h = max(1, int(aw * scale)), max(1, int(ah * scale))
-        return self._draw(item_id, w, h, self._label(item_id))
+        return self._photo(item_id, w, h) or self._draw(item_id, w, h, self._label(item_id))
 
     def backdrop(self, item_id, size=1280):
-        return self._draw(item_id + "-bd", size, int(size * 9 / 16), "", band=False)
+        w, h = size, int(size * 9 / 16)
+        return self._photo(item_id + "-bd", w, h) or self._draw(item_id + "-bd", w, h, "", band=False)
+
+    def _photo(self, seed, w, h):
+        """Real rights-free photo from Lorem Picsum, seeded + disk-cached.
+        Returns image bytes, or None to fall back to procedural art."""
+        if _OFFLINE:
+            return None
+        key = hashlib.md5(f"{seed}-{w}x{h}".encode()).hexdigest()
+        path = os.path.join(_CACHE_DIR, f"{key}.jpg")
+        try:
+            if os.path.exists(path):
+                with open(path, "rb") as f:
+                    return f.read()
+        except OSError:
+            pass
+        try:
+            url = f"https://picsum.photos/seed/{key}/{w}/{h}"
+            resp = requests.get(url, timeout=6)
+            resp.raise_for_status()
+            data = resp.content
+            os.makedirs(_CACHE_DIR, exist_ok=True)
+            with open(path, "wb") as f:
+                f.write(data)
+            return data
+        except Exception:
+            return None  # offline / blocked → procedural fallback
 
     def _label(self, item_id):
         name = self.item(item_id).get("Name", "?")
