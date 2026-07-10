@@ -51,37 +51,21 @@ approve the code in Jellyfin (Settings → Quick Connect). Config is stored in
 | Esc | Back (or clear search) |
 | Space | Play / pause (while casting) |
 
-## Mock mode
+## Development
 
-Run with invented libraries and procedurally-drawn placeholder artwork (no
-server, no network, no copyrighted content) — handy for screenshots, demos and
-regression tests:
-
-```bash
-python3 quickcast.py --mock       # or QUICKCAST_MOCK=1 python3 quickcast.py
-```
-
-Artwork is real rights-free photography from [Lorem Picsum](https://picsum.photos)
-(Unsplash-sourced, free to use), seeded per item and cached under
-`~/.cache/quickcast/mock-art/`, so it looks like a genuine library, stays stable
-across runs, and works offline after the first fetch. Set
-`QUICKCAST_MOCK_OFFLINE=1` to skip the network entirely and use procedurally
-drawn placeholders instead. All other mock data is deterministic (derived from
-item ids). Implemented in `mockdata.py`.
-
-## Screenshots (development)
-
-`tools/shots.py` drives the app through its key states and writes one PNG each
-(it uses mock mode, so the set is deterministic and copyright-free).
-Run it under a virtual framebuffer for deterministic, occlusion-independent
-captures (Wayland throttles frames for hidden windows):
+A `--mock` mode serves an invented library with rights-free artwork (no server,
+no real content) so the UI can be developed, demoed and regression-tested in
+isolation:
 
 ```bash
-xvfb-run -a --server-args="-screen 0 1220x840x24" \
-  python3 tools/shots.py build/screenshots
+python3 quickcast.py --mock
 ```
 
-`tools/shot.py` grabs a single home-view screenshot the same way.
+Mock data is deterministic (derived from item ids); artwork is seeded photos
+from [Lorem Picsum](https://picsum.photos), cached under
+`~/.cache/quickcast/mock-art/` (set `QUICKCAST_MOCK_OFFLINE=1` for procedural
+placeholders). `tools/shots.py <dir>` renders the key screens to PNGs on top of
+mock mode for stable, copyright-free regression screenshots. See `mockdata.py`.
 
 ## License
 

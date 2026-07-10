@@ -956,16 +956,17 @@ class QuickCast:
         log(f"Rendered {len(items)} items")
 
     # ── Image helpers ───────────────────────────────────
-    def _set_image_async(self, image, item_id, w, h, fallback_icon):
+    def _set_image_async(self, image, item_id, w, h, fallback_icon, backdrop=False):
         """Show a faint placeholder icon immediately, then load the real
         artwork on a worker thread. Never blocks the main loop. Eager: use
-        for the small Continue Watching row."""
+        for the small Continue Watching row. backdrop=True loads the wide
+        (landscape) image, right for 16:9 cards."""
         gen = self._render_generation
         image.set_size_request(w, h)
         image.set_from_icon_name(fallback_icon, Gtk.IconSize.DIALOG)
 
         def work():
-            pb = self._load_pixbuf_aspect(item_id, w, h)
+            pb = self._load_pixbuf_aspect(item_id, w, h, backdrop=backdrop)
 
             def apply():
                 # drop if the user navigated away since this was queued
@@ -1020,8 +1021,13 @@ class QuickCast:
             if (y + rec["h"]) >= (top - margin) and y <= (bottom + margin):
                 self._load_lazy_rec(rec)
 
-    def _load_pixbuf_aspect(self, item_id, target_w, target_h):
-        img_data = self.fetch_image(item_id, size=max(target_w, target_h))
+    def _load_pixbuf_aspect(self, item_id, target_w, target_h, backdrop=False):
+        if backdrop:
+            img_data = self.fetch_backdrop(item_id, size=max(target_w, target_h))
+            if not img_data:  # fall back to primary if no backdrop
+                img_data = self.fetch_image(item_id, size=max(target_w, target_h))
+        else:
+            img_data = self.fetch_image(item_id, size=max(target_w, target_h))
         if not img_data:
             return None
         try:
@@ -1058,7 +1064,8 @@ class QuickCast:
         img_wrap.set_size_request(img_w, img_h)
 
         image = Gtk.Image()
-        self._set_image_async(image, item_id, img_w, img_h, "video-display-symbolic")
+        # Continue Watching is a 16:9 card, so use the wide (backdrop) image
+        self._set_image_async(image, item_id, img_w, img_h, "video-display-symbolic", backdrop=True)
 
         img_wrap.pack_start(image, True, True, 0)
 
