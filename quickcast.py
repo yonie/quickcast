@@ -177,6 +177,7 @@ class QuickCast:
         self._search_timer_id = None
         self._last_error = None
         self._lazy = []  # pending artwork loads for grid cards (loaded when visible)
+        self._pending_cast_item = None  # item to cast once a device is chosen
 
         # Build UI
         self._build_toolbar()
@@ -188,6 +189,7 @@ class QuickCast:
         log("Window shown")
 
         self.load_config()
+        self.update_status()
         log(f"Config: server={self.server_url}, key={'set' if self.api_key else 'none'}, user={'set' if self.user_id else 'none'}")
 
         if not self.server_url:
@@ -197,8 +199,12 @@ class QuickCast:
 
     # ── Toolbar ─────────────────────────────────────────
     def _build_toolbar(self):
-        self.toolbar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
+        self.toolbar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         self.toolbar.get_style_context().add_class("toolbar")
+        self.toolbar.set_margin_top(6)
+        self.toolbar.set_margin_bottom(6)
+        self.toolbar.set_margin_start(8)
+        self.toolbar.set_margin_end(8)
 
         def make_btn(label, callback, css_class=None):
             btn = Gtk.Button(label=label)
@@ -209,29 +215,24 @@ class QuickCast:
 
         self.home_btn = make_btn("🏠 Home", self.on_home)
         self.back_btn = make_btn("⬅ Back", self.on_back)
+        # Cast button doubles as the connection indicator (shows device name).
         self.cast_btn = make_btn("📺 Cast", self.show_cast_devices)
-        self.stop_btn = make_btn("⏹ Stop", self.on_stop_cast)
         self.server_btn = make_btn("🖥️ Server", self.show_server_config)
         self.help_btn = make_btn("❓", self.show_help)
         self.help_btn.set_tooltip_text("About QuickCast")
 
         def sep():
             s = Gtk.Separator(orientation=Gtk.Orientation.VERTICAL)
-            s.set_margin_start(4)
-            s.set_margin_end(4)
+            s.set_margin_top(3)
+            s.set_margin_bottom(3)
             return s
 
         for btn in [self.home_btn, self.back_btn, sep(),
-                    self.cast_btn, self.stop_btn, sep(),
+                    self.cast_btn, sep(),
                     self.server_btn, self.help_btn]:
             self.toolbar.pack_start(btn, False, False, 0)
 
-        # Right side: search + sort + status
-        self.status_label = Gtk.Label(label="")
-        self.status_label.get_style_context().add_class("status-label")
-        self.status_label.set_halign(Gtk.Align.END)
-        self.status_label.set_margin_start(12)
-
+        # Right side: search + genre + sort
         self.search_entry = Gtk.SearchEntry()
         self.search_entry.set_placeholder_text("Search library…")
         self.search_entry.set_width_chars(22)
@@ -251,10 +252,9 @@ class QuickCast:
         self.genre_combo.connect("changed", self.on_genre_changed)
         self.genre_combo.set_no_show_all(True)  # only shown when a library has genres
 
-        self.toolbar.pack_end(self.status_label, False, False, 8)
-        self.toolbar.pack_end(self.sort_combo, False, False, 6)
-        self.toolbar.pack_end(self.genre_combo, False, False, 6)
-        self.toolbar.pack_end(self.search_entry, False, False, 6)
+        self.toolbar.pack_end(self.sort_combo, False, False, 0)
+        self.toolbar.pack_end(self.genre_combo, False, False, 0)
+        self.toolbar.pack_end(self.search_entry, False, False, 0)
 
     # ── Content area ────────────────────────────────────
     def _build_content(self):
@@ -387,10 +387,12 @@ class QuickCast:
         self.np_back_btn = ctrl_btn("media-seek-backward-symbolic", self.on_seek_back, "Back 30s")
         self.np_play_btn = ctrl_btn("media-playback-start-symbolic", self.on_play_pause, "Play / Pause")
         self.np_fwd_btn = ctrl_btn("media-seek-forward-symbolic", self.on_seek_fwd, "Forward 30s")
+        self.np_stop_btn = ctrl_btn("media-playback-stop-symbolic", self.on_stop_cast, "Stop casting")
 
         controls.pack_start(self.np_back_btn, False, False, 0)
         controls.pack_start(self.np_play_btn, False, False, 0)
         controls.pack_start(self.np_fwd_btn, False, False, 0)
+        controls.pack_start(self.np_stop_btn, False, False, 0)
 
         prog_col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
         prog_col.pack_start(title_box, False, False, 0)
@@ -460,13 +462,22 @@ class QuickCast:
             f.write(f"user_id={self.user_id or ''}\n")
 
     def update_status(self):
-        server = "●" if self.server_url else "○"
-        cast = "●" if self.chromecast else "○"
-        self.status_label.set_markup(
-            f"<span foreground='{'#5B7CFA' if self.server_url else '#ccc'}'>{server}</span> Server"
-            f"   "
-            f"<span foreground='{'#5B7CFA' if self.chromecast else '#ccc'}'>{cast}</span> Cast"
-        )
+        # Cast button doubles as the connection indicator: shows the device
+        # name when connected, plain "Cast" otherwise (state + action in one).
+        if self.chromecast:
+            name = getattr(self.chromecast, "name", "device")
+            self.cast_btn.set_label(f"📺 {name}")
+            self.cast_btn.set_tooltip_text(f"Casting to {name} — click to switch device")
+        else:
+            self.cast_btn.set_label("📺 Cast")
+            self.cast_btn.set_tooltip_text("Choose a Chromecast to cast to")
+        # Server button reflects its connection
+        if self.server_url:
+            host = self.server_url.split("//")[-1].rstrip("/")
+            self.server_btn.set_tooltip_text(f"Connected to {host} — click to change")
+        else:
+            self.server_btn.set_label("🖥️ Connect")
+            self.server_btn.set_tooltip_text("Connect to your Jellyfin server")
 
     def _auth_header(self):
         return {
@@ -1293,14 +1304,11 @@ class QuickCast:
         cast_btn.set_margin_top(12)
         self._detail_cast_btn = cast_btn
 
-        # resume hint if partially watched
+        # resume hint if partially watched (always actionable: if no device
+        # is connected, clicking opens the picker first, then casts)
         pos = item.get("UserData", {}).get("PlaybackPositionTicks", 0)
         if pos and runtime:
             cast_btn.set_label(f"▶  Resume ({self._format_time(pos / 10000000)})")
-
-        if not self.chromecast:
-            cast_btn.set_label("📺  Select a Chromecast first")
-            cast_btn.set_sensitive(False)
 
         right_col.pack_start(title_label, False, False, 0)
         right_col.pack_start(meta_label, False, False, 0)
@@ -1345,7 +1353,10 @@ class QuickCast:
     # ── Casting ─────────────────────────────────────────
     def cast_item(self, item):
         if not self.chromecast:
-            self.show_toast("Select a Chromecast first (Cast button in toolbar)")
+            # No device yet: remember what to cast, then open the picker.
+            # _select_chromecast will cast it once a device is chosen.
+            self._pending_cast_item = item
+            self.show_cast_devices(None)
             return
 
         item_id = item.get("Id")
@@ -1609,6 +1620,11 @@ class QuickCast:
         # If detail page is visible, refresh cast button
         if self.detail_box.get_visible() and self._detail_current_item:
             GLib.idle_add(self._refresh_detail_cast_button)
+
+        # If the user clicked Cast on an item before choosing a device, cast it now
+        if self._pending_cast_item is not None:
+            item, self._pending_cast_item = self._pending_cast_item, None
+            GLib.idle_add(self.cast_item, item)
 
     def _refresh_detail_cast_button(self):
         btn = getattr(self, "_detail_cast_btn", None)
